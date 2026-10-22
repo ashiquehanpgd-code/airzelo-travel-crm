@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Travel Agency CRM</title>
+<link rel="stylesheet" href="launcher.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="head">
+      <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg></div>
+      <div><h1 id="product">Travel Agency CRM</h1><p class="muted" id="version"></p></div>
+    </header>
+
+    <section id="list-view">
+      <div class="row"><h2>Your agencies</h2><button class="btn primary" id="new-btn" type="button">New agency</button></div>
+      <p class="muted">Each agency is a separate company file with its own users, bookings, accounts, attachments and backups. Agencies never share data.</p>
+      <div id="agencies" class="list"></div>
+    </section>
+
+    <section id="new-view" hidden>
+      <h2>New agency</h2>
+      <p class="muted">Creates a new, empty company file on this computer. You will sign in with the owner login you choose here.</p>
+      <form id="new-form" autocomplete="off">
+        <label>Agency name<input name="agency_name" required minlength="2" maxlength="120" placeholder="e.g. Sunrise Travels"></label>
+        <label>Owner username<input name="username" required minlength="3" maxlength="60" autocomplete="off"></label>
+        <label>Password<input name="password" type="password" required minlength="10" autocomplete="new-password"><span class="hint">At least 10 characters. Keep it safe: it protects your financial data.</span></label>
+        <label>Repeat password<input name="password2" type="password" required minlength="10" autocomplete="new-password"></label>
+        <div class="err" id="new-err" role="alert"></div>
+        <div class="row end"><button class="btn" type="button" id="cancel-btn">Cancel</button><button class="btn primary" type="submit" id="create-btn">Create agency</button></div>
+      </form>
+    </section>
+
+    <div class="status" id="status" role="status"></div>
+    <footer class="foot"><button class="link" type="button" id="data-btn">Show data folder</button><span class="muted" id="data-path"></span></footer>
+  </main>
+  <script src="launcher.js"></script>
+</body>
+</html>

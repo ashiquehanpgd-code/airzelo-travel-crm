@@ -1,0 +1,29 @@
+:root { --bg: #f4f6fb; --surface: #ffffff; --text: #0f1b3d; --muted: #5b6785; --border: #dfe4ef; --primary: #1b3fcc; --primary-text: #ffffff; --danger: #c0352b; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0d1426; --surface: #151f38; --text: #e8ecf7; --muted: #9aa6c4; --border: #26324f; --primary: #4f74ff; --primary-text: #ffffff; --danger: #ff7a70; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+.wrap { max-width: 640px; margin: 0 auto; padding: 48px 20px; }
+.head { display: flex; gap: 14px; align-items: center; margin-bottom: 28px; }
+.mark { width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #1b3fcc, #0b1f55); display: grid; place-items: center; }
+.mark svg { width: 26px; height: 26px; fill: #fff; }
+h1 { font-size: 22px; margin: 0; } h2 { font-size: 16px; margin: 0; }
+.muted { color: var(--muted); margin: 4px 0 0; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.row.end { justify-content: flex-end; margin-top: 8px; }
+.list { margin-top: 16px; display: grid; gap: 10px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; }
+.card .grow { flex: 1; min-width: 0; } .card .name { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty { text-align: center; padding: 32px 12px; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); }
+.btn { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 9px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+.btn:disabled { opacity: .6; cursor: progress; }
+form { display: grid; gap: 12px; margin-top: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+label { display: grid; gap: 4px; font-weight: 600; font-size: 13px; }
+input { font: inherit; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+.hint { font-weight: 400; color: var(--muted); font-size: 12px; }
+.err { color: var(--danger); min-height: 1em; }
+.status { margin-top: 16px; color: var(--muted); min-height: 1.5em; }
+.foot { margin-top: 32px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.link { background: none; border: 0; color: var(--primary); cursor: pointer; padding: 0; font: inherit; }

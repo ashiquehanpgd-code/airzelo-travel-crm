@@ -1,0 +1,17 @@
+# build outputs and downloads (re-created by build/fetch_python.py and electron-builder)
+dist/
+build/cache/
+build/runtime/
+desktop/node_modules/
+core/bin/
+core/data/
+__pycache__/
+*.pyc
+.DS_Store
+# never commit customer or agency data
+*.db
+*.db-wal
+*.db-shm
+
+# local build logs
+build/*.log

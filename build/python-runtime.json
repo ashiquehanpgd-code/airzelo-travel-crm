@@ -1,0 +1,20 @@
+{
+  "source": "https://github.com/astral-sh/python-build-standalone",
+  "release": "20261003",
+  "python": "3.12.15",
+  "licence": "CPython: PSF License Agreement (redistributable). Build scripts: MPL-2.0. Re-verify before each commercial release.",
+  "targets": {
+    "mac-arm64": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.12.15%2B20261003-aarch64-apple-darwin-install_only.tar.gz",
+      "sha256": "316a463172740e71d8dca1f2730784e325f3f720941137b5d674d5801a632213"
+    },
+    "mac-x64": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.12.15%2B20261003-x86_64-apple-darwin-install_only.tar.gz",
+      "sha256": "a8fd7a91852f19b6d959793ef41fad048631ccb2a334a9ecdf573255298f7978"
+    },
+    "win-x64": {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.12.15%2B20261003-x86_64-pc-windows-msvc-install_only.tar.gz",
+      "sha256": "4b6f0beebbb695a0f3ea237b8c3eaa5bd424f47a7bc25b2fbe3a43390c770f08"
+    }
+  }
+}

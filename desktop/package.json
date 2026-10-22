@@ -1,0 +1,52 @@
+{
+  "name": "travel-agency-crm",
+  "productName": "Travel Agency CRM",
+  "version": "0.1.0",
+  "description": "Travel agency CRM and accounting for Windows and macOS (placeholder product name)",
+  "author": "Placeholder Publisher",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:mac": "electron-builder --mac --arm64 --x64 --publish never",
+    "dist:mac:arm64": "electron-builder --mac --arm64 --publish never",
+    "dist:win": "electron-builder --win --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.17.0"
+  },
+  "build": {
+    "appId": "com.placeholder.travelagencycrm",
+    "productName": "Travel Agency CRM",
+    "copyright": "Copyright © 2026 Placeholder Publisher",
+    "directories": { "output": "../dist", "buildResources": "resources" },
+    "files": ["main.js", "preload.js", "launcher/**", "package.json"],
+    "extraResources": [
+      { "from": "../core", "to": "core", "filter": ["run.py", "server/**", "static/**", "bin/**", "!**/__pycache__/**", "!**/*.pyc"] },
+      { "from": "../build/runtime/${os}-${arch}/python", "to": "python", "filter": ["**/*", "!**/__pycache__/**"] }
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.business",
+      "target": [{ "target": "dmg" }, { "target": "zip" }],
+      "identity": null,
+      "hardenedRuntime": false,
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": { "title": "${productName} ${version}" },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "artifactName": "${productName}-${version}-win-${arch}-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "Travel Agency CRM"
+    }
+  }
+}
