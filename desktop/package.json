@@ -3,7 +3,7 @@
   "productName": "AirZelo",
   "version": "0.2.0",
   "description": "AirZelo - travel agency CRM and accounting for Windows and macOS",
-  "author": "[LEGAL NAME PLACEHOLDER]",
+  "author": "ASHIQUE KALIPPADATH",
   "license": "UNLICENSED",
   "private": true,
   "main": "main.js",
@@ -20,7 +20,7 @@
   "build": {
     "appId": "com.airzelo.crm",
     "productName": "AirZelo",
-    "copyright": "Copyright © 2026 [LEGAL NAME PLACEHOLDER]",
+    "copyright": "Copyright © 2026 ASHIQUE KALIPPADATH",
     "directories": { "output": "../dist", "buildResources": "resources" },
     "files": ["main.js", "preload.js", "launcher/**", "package.json"],
     "extraResources": [

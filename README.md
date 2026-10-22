@@ -4,7 +4,7 @@ A desktop CRM and accounting app for travel agencies, for **Windows 10/11** and 
 Each agency is a separate **company file**, so agencies never share data.
 It is built from the business workflows of the Quick Trip CRM, with all Quick Trip identity and data removed.
 
-> **Status: v0.2.0: Stage 2 foundation + white-label company settings** (`docs/WHITE-LABEL-SETTINGS.md`). The publisher and app ID are still placeholders.
+> **Status: v0.2.0: Stage 2 foundation + white-label company settings** (`docs/WHITE-LABEL-SETTINGS.md`). Release identity is set in `docs/RELEASE-IDENTITY.md` (app ID `com.airzelo.crm`, publisher ASHIQUE KALIPPADATH).
 > macOS packages are **unsigned** test builds. Windows is configured in CI but **not yet built or tested**: no Windows environment has run it yet.
 
 ## Layout
