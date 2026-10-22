@@ -108,10 +108,9 @@ class BrandedDocuments(Base):
             if logo is not JPEG and logo[25] == 6:
                 self.assertIn(b"/SMask", pdf)  # transparency kept
 
-    def test_ticket_pdf_without_logo_and_no_built_in_slogan(self):
+    def test_ticket_pdf_without_logo(self):
         pdf = ticket.render_pdf(ticket.ticket_data(self.conn, self.bid), "ticket")
         self.assertNotIn(b"/Subtype /Image", pdf)
-        self.assertNotIn(b"Journey, Our Care", zlib.decompress(pdf.split(b"stream\n", 1)[1].split(b"\nendstream", 1)[0]))
 
     def test_issued_invoice_keeps_its_snapshot_after_profile_edits(self):
         services.set_logo(self.conn, self.ctx, b64(png()))

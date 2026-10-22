@@ -149,11 +149,35 @@ class DesktopEntryPoints(unittest.TestCase):
 
 
 class NoQuickTripData(unittest.TestCase):
+    """The product must not contain Quick Trip's name, slogan, document prefixes or bank / UPI identifiers.
+    Only SHA-256 hashes of the forbidden phrases are stored here, so this test does not itself carry them."""
+    FORBIDDEN = {
+        "09ff163a416367f767af6f5ba3f7245db72dd92ed73be547832149fce816efbc",
+        "0e07d1fd0ca5e4cfe1b2008256a1db6b614886da9ca57fccacc7eb296e7778a8",
+        "132b887597e3269ea98a7ae55bd9070ee59c242f88274b30dbad1f7672f52e25",
+        "1c2d1c5b8aa5b2fef55573a3b9d938a94be0ae3292422ede5a6b85fbbac2d833",
+        "40bb28f34340456d31b6f65aa5a6443897e0bf80e0995f5839aa4ce03442ba16",
+        "7b02ae173aa989be9e032dd019629f3b71bbf3ef805d4ca5f5310d6d0587f36e",
+        "858ab098d6cbb00487c8cc1e35c2585d27ef8bde9750547e94a64a6fce59e562",
+        "99def35fe9573984ca1b128d30b41c49ca3b4639f788300387cd4047650b8a0e",
+        "b038d4633fb62aae9388893cd23ed48d7388e64a7058e765cef625c3e80db629",
+        "f5ea3a816f5a989a2c147dc5ad24da4f21ad206f840b4889ac770b9b79741637",
+    }
+
     def test_product_contains_no_quick_trip_identifiers(self):
-        pattern = ("Quick Trip", "QUICK TRIP", "QuickTrip", "quicktrip", "00000000000000", "0000000000", "XXXX0000000", "REDACTED-BRANCH", "Your Journey, Our Care", "QT/INV")
+        import hashlib
+        import re
         hits = []
         for p in list((ROOT / "server").rglob("*.py")) + list((ROOT / "static").rglob("*")) + [ROOT / "run.py"]:
-            if p.is_file() and p.suffix in (".py", ".js", ".html", ".css", ".svg"):
-                text = p.read_text(encoding="utf-8")
-                hits += ["%s: %s" % (p.name, s) for s in pattern if s in text]
+            if not (p.is_file() and p.suffix in (".py", ".js", ".html", ".css", ".svg")):
+                continue
+            words = re.findall(r"[a-z0-9]+", p.read_text(encoding="utf-8").lower())
+            for n in (1, 2, 3, 4):  # every word and 2-4 word phrase
+                for i in range(len(words) - n + 1):
+                    if hashlib.sha256(" ".join(words[i:i + n]).encode()).hexdigest() in self.FORBIDDEN:
+                        hits.append("%s (phrase of %d words at word %d)" % (p.name, n, i))
         self.assertEqual(hits, [])
+
+    def test_guard_detects_a_forbidden_phrase(self):
+        import hashlib
+        self.assertIn(hashlib.sha256(b"quick trip").hexdigest(), self.FORBIDDEN)

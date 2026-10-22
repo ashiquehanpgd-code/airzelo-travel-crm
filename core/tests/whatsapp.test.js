@@ -84,7 +84,7 @@ t("itinerary", () => {
   assert.match(m, /Ticket 312-1234567890/);
 });
 t("invoice never claims a PDF unless the owner ticks it", () => {
-  const inv = { number: "QT/INV/2026-27/0001", doc_type: "invoice", issue_date: "2026-10-21", total: 11096800, currency: "INR", status: "issued",
+  const inv = { number: "INV/2026-27/0001", doc_type: "invoice", issue_date: "2026-10-21", total: 11096800, currency: "INR", status: "issued",
     doc: { customer: { name: "RESHMA" }, booking: { ref: "BK-26-00001", pnr: "QZ4M8P" } }, booking_calc: { received: 0, outstanding: 11096800, currency_note: "INR" } };
   const m = wa.tpl.invoice(inv, {});
   noPlaceholders(m);
@@ -173,9 +173,9 @@ t("emoji and line breaks survive the wa.me link", () => {
 });
 t("customer reminder and invoice carry payment details from settings", () => {
   QT.state.meta.settings = Object.assign({}, QT.state.meta.settings, { pay_account_name: "DEMO TRAVELS", pay_account_number: "50100012345678", pay_ifsc: "ABCD0123456", pay_branch: "MAIN ROAD", pay_upi_number: "9000000001", pay_upi_apps: "Google Pay, PhonePe" });
-  const r = wa.tpl.customerReminder({ customer: { name: "R" }, balance: { outstanding: 100 }, bookings: [{ ref: "QT-1", customer_outstanding: 100 }] }, {});
+  const r = wa.tpl.customerReminder({ customer: { name: "R" }, balance: { outstanding: 100 }, bookings: [{ ref: "BK-1", customer_outstanding: 100 }] }, {});
   assert.match(r, /IFSC Code: ABCD0123456/);
-  const inv = { number: "QT/INV/1", doc_type: "invoice", issue_date: "2026-10-21", total: 100, currency: "INR", status: "issued", doc: { customer: { name: "R" }, booking: {} } };
+  const inv = { number: "INV/1", doc_type: "invoice", issue_date: "2026-10-21", total: 100, currency: "INR", status: "issued", doc: { customer: { name: "R" }, booking: {} } };
   assert.match(wa.tpl.invoice(Object.assign({ booking_calc: { received: 0, outstanding: 100, currency_note: "INR" } }, inv), {}), /UPI Number: 9000000001/);
   assert.ok(!/UPI Number/.test(wa.tpl.invoice(Object.assign({ booking_calc: { received: 100, outstanding: 0, currency_note: "INR" } }, inv), {})));
 });

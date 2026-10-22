@@ -60,7 +60,7 @@ Base Fare INR 120,000.00   Taxes & Fees INR 15,500.00   Total Fare INR 135,500.0
 
     def test_layouts(self):
         # times then airports, dates on the line below (table / OCR rows), an overnight arrival and a duration that is not a time
-        r = ts.parse("PNR / BOOKING REFERENCE    AGENCY REF\nX9Y8Z7    QT-1\nIX 433\n23:30 TRV    05:10 RUH    Duration 1:35 hrs\n"
+        r = ts.parse("PNR / BOOKING REFERENCE    AGENCY REF\nX9Y8Z7    BK-1\nIX 433\n23:30 TRV    05:10 RUH    Duration 1:35 hrs\n"
                      "Mon, 05 Jan 2026    Tue, 06 Jan 2026\nMS ANNA THOMAS (Adult)", "ocr", 0.99)
         self.assertEqual(val(r["booking"]["pnr"]), "X9Y8Z7")
         s = r["segments"][0]
