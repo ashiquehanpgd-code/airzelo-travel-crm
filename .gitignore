@@ -13,5 +13,29 @@ __pycache__/
 *.db-wal
 *.db-shm
 
-# local build logs
-build/*.log
+# logs
+*.log
+
+# secrets and signing material: never commit (Apple Developer ID / notarization keys, Windows code-signing certificates)
+.env
+.env.*
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.cer
+*.crt
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db
+
+# backups and archives (backups may contain customer data)
+*.bundle
+*.tar.gz
+*.tgz
+*.zip
+**/AirZelo-backups/
+*.sqlite
+*.sqlite3
