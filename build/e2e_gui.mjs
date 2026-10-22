@@ -69,6 +69,49 @@ try {
   const title = await crm.evaluate('document.title');
   console.log('CRM page:', title, '| login', login, '| agency', meta.name, '| payment details built in:', !!meta.pay);
   if (login !== 200 || meta.name !== 'GUI Test Travels' || meta.pay) throw new Error('unexpected CRM state');
+  // ---- first-run setup wizard, driven through the real page (synthetic company)
+  await crm.evaluate('location.reload(), true');
+  await sleep(1500);
+  const until = async (expr, what) => { for (let i = 0; i < 80; i++) { try { if (await crm.evaluate(expr)) return; } catch (_) { /* page loading */ } await sleep(250); } throw new Error('timeout: ' + what); };
+  await until('location.hash.startsWith("#/setup") && !!document.querySelector(".wizard-steps")', 'wizard shown on first run');
+  const setv = (n, v) => `(() => { const e = document.querySelector('[name=${n}]'); e.value = ${JSON.stringify(v)}; e.dispatchEvent(new Event('input', {bubbles: true})); return true; })()`;
+  await crm.evaluate(setv('legal_name', 'GUI Test Travels Private Limited'));
+  await crm.evaluate(setv('business_email', 'hello@guitest.example'));
+  await crm.evaluate(setv('business_website', 'www.guitest.example'));
+  const next = async (n) => { await crm.evaluate('document.querySelector("[data-next]").click(), true'); await until(`location.hash === "#/setup?step=${n}" && !!document.querySelector("[data-next]")`, 'step ' + n); };
+  await next(1);
+  // logo upload uses the same endpoint as the page's file picker (a synthetic 32x32 PNG)
+  const zlib = await import('node:zlib');
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (b) => { let c = 0xffffffff; for (const x of b) c = crcTable[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (t, d) => { const len = Buffer.alloc(4); len.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(32, 0); ihdr.writeUInt32BE(32, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const rows = Buffer.concat(Array.from({ length: 32 }, (_, y) => Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: 96 }, (_, i) => (i * 5 + y * 3) % 256))])));
+  const logo = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]).toString('base64');
+  const up = await crm.evaluate(`fetch('/api/settings/logo', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-QT-CSRF': '1'}, body: JSON.stringify({data: '${logo}'})}).then((r) => r.status)`);
+  if (up !== 200) throw new Error('logo upload ' + up);
+  await crm.evaluate(setv('brand_color', '#0E7C66'));
+  await next(2);
+  await next(3);
+  await crm.evaluate(setv('invoice_prefix', 'GUI/'));
+  await crm.evaluate(`(() => { const e = document.querySelector('[name=date_format]'); e.value = 'DD/MM/YYYY'; return true; })()`);
+  await next(4);
+  const sample = await crm.evaluate('document.querySelector("[data-body]").innerText');
+  const sampleLogo = await crm.evaluate('!!document.querySelector("[data-body] .doc-brand img")');
+  console.log('wizard preview: prefix GUI/', sample.includes('GUI/'), '| legal name', sample.includes('GUI Test Travels Private Limited'), '| logo', sampleLogo, '| DD/MM/YYYY date', /\d\d\/\d\d\/\d{4}/.test(sample));
+  if (!sample.includes('GUI/') || !sample.includes('GUI Test Travels Private Limited') || !sampleLogo) throw new Error('sample invoice does not show the configured settings');
+  await next(5);
+  await crm.evaluate('document.querySelector("[data-next]").click(), true');
+  await until('location.hash === "#/dashboard" && !!document.querySelector(".sidebar")', 'dashboard after setup');
+  const shell = await crm.evaluate(`({ logo: !!document.querySelector('.brand-mark.logo img'), accent: getComputedStyle(document.documentElement).getPropertyValue('--royal').trim(),
+    name: document.querySelector('.brand-name').textContent })`);
+  const saved = await crm.evaluate(`fetch('/api/meta', {headers: {'X-QT-CSRF': '1'}}).then((r) => r.json()).then((m) => [m.settings.setup_completed, m.settings.legal_name, m.settings.invoice_prefix, m.settings.brand_color, !!m.settings.logo_file].join(' | '))`);
+  console.log('after setup: sidebar logo', shell.logo, '| accent', shell.accent, '| name', shell.name, '| saved:', saved);
+  if (!shell.logo || shell.accent.toLowerCase() !== '#0e7c66' || !saved.startsWith('1 | GUI Test Travels Private Limited | GUI/ | #0E7C66 | true')) throw new Error('settings not applied');
+  await crm.evaluate('location.hash = "#/settings/business", true');
+  await until('!!document.querySelector("[data-logo-box] img") && document.querySelector("[name=legal_name]").value === "GUI Test Travels Private Limited"', 'settings page shows saved profile');
+  console.log('settings page: profile and logo shown for editing');
+
   // the bridge must refuse calls from a CRM page
   const refused = await crm.evaluate('typeof window.desktop === "undefined" ? "no bridge" : window.desktop.listAgencies().then(() => "ALLOWED", (e) => "refused")');
   console.log('desktop bridge from CRM page:', refused);

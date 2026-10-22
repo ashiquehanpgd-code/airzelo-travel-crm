@@ -1,18 +1,25 @@
 # Installing, updating and recovering (customer guide, draft)
 
 ## Install
-- **Mac:** open the `.dmg` and drag *Travel Agency CRM* to Applications. Use the Apple Silicon build on M-series Macs and the Intel build on Intel Macs. macOS 12 or later.
+- **Mac:** open the `.dmg` and drag *AirZelo* to Applications. Use the Apple Silicon build on M-series Macs and the Intel build on Intel Macs. macOS 12 or later.
 - **Windows 10/11 (64-bit):** run the setup `.exe` and choose where to install. No administrator rights are needed (it installs for the current user).
 - No Terminal, Python or other software is needed. Everything is included.
 
 ## First start
 1. Click **New agency** and enter your agency name and an owner username and password (at least 10 characters).
-2. Click **Open** and sign in.
-3. Under Settings, add your company details, logo, invoice details and the bank / UPI details shown to customers. A new agency starts with none.
+2. Click **Open** and sign in. The **setup wizard** opens, with these steps:
+   1. Company details
+   2. Logo and brand colour
+   3. Bank accounts and the payment details shown to customers
+   4. Invoice prefixes, date format and currency display
+   5. A sample invoice to check
+   6. Finish
+   Optional fields can be left empty. **Skip for now** takes you straight to the dashboard.
+3. Change any of this later in **Settings → Company & branding** and **Settings → Documents & formats**. Changes apply to new documents. Invoices you have already issued keep the details they were issued with.
 
 ## Where your data is
-- **Mac:** `~/Library/Application Support/Travel Agency CRM/agencies/`
-- **Windows:** `%APPDATA%\Travel Agency CRM\agencies\`
+- **Mac:** `~/Library/Application Support/AirZelo/agencies/`
+- **Windows:** `%APPDATA%\AirZelo\agencies\`
 - File → **Show data folder** opens it.
 
 Each agency has its own folder: database, attachments and backups. Uninstalling the app does **not** delete your data.

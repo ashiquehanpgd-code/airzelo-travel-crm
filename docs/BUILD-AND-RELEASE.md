@@ -30,7 +30,7 @@ cd desktop && CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac
 Then smoke-test the built app:
 
 ```bash
-python3 build/smoke_test.py --app "dist/mac-arm64/Travel Agency CRM.app"
+python3 build/smoke_test.py --app "dist/mac-arm64/AirZelo.app"
 ```
 
 The ticket reader (`core/bin/ta-ticket-reader`) is a universal binary. Build it as the CI workflow does: `arm64-apple-macos12` + `x86_64-apple-macos13`, joined with `lipo`.

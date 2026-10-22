@@ -1,10 +1,10 @@
-# Travel Agency CRM (working title)
+# AirZelo — travel agency CRM
 
 A desktop CRM and accounting app for travel agencies, for **Windows 10/11** and **macOS** (Apple Silicon and Intel).
 Each agency is a separate **company file**, so agencies never share data.
 It is built from the business workflows of the Quick Trip CRM, with all Quick Trip identity and data removed.
 
-> **Status: Stage 2 (foundation).** The product name, publisher and app ID are placeholders.
+> **Status: v0.2.0: Stage 2 foundation + white-label company settings** (`docs/WHITE-LABEL-SETTINGS.md`). The publisher and app ID are still placeholders.
 > macOS packages are **unsigned** test builds. Windows is configured in CI but **not yet built or tested**: no Windows environment has run it yet.
 
 ## Layout
@@ -12,7 +12,7 @@ It is built from the business workflows of the Quick Trip CRM, with all Quick Tr
 | Path | What |
 |---|---|
 | `core/` | Python core (standard library only): local HTTP API, business logic, SQLite company file, migrations, backups, PDFs, ticket parser. `core/static/` is the web UI. |
-| `core/tests/` | 143 Python tests + 17 WhatsApp template tests (synthetic data only) |
+| `core/tests/` | 155 Python tests + 17 WhatsApp template tests (synthetic data only) |
 | `desktop/` | Electron shell: agency chooser, starts the bundled core per agency, window, menus, installer config |
 | `build/` | Pinned Python runtime (`python-runtime.json`), `fetch_python.py` (sha256-verified download), `smoke_test.py` (tests a packaged app with its own runtime) |
 | `.github/workflows/build.yml` | CI: tests + packaging + smoke tests on macOS arm64, macOS x64 and Windows x64 |
@@ -29,9 +29,9 @@ It is built from the business workflows of the Quick Trip CRM, with all Quick Tr
 4. **Quitting or switching agency** closes the core's stdin, so the core shuts down cleanly (WAL checkpoint) on every OS.
 
 **Data folders** (never inside the app, so upgrades and uninstall don't touch them):
-- macOS: `~/Library/Application Support/Travel Agency CRM/agencies/`
-- Windows: `%APPDATA%\Travel Agency CRM\agencies\`
-- Ticket PDFs: `Documents/Travel Agency CRM/<Agency>/Tickets`
+- macOS: `~/Library/Application Support/AirZelo/agencies/`
+- Windows: `%APPDATA%\AirZelo\agencies\`
+- Ticket PDFs: `Documents/AirZelo/<Agency>/Tickets`
 
 ## Develop
 
