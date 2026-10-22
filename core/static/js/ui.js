@@ -1,4 +1,4 @@
-/* Travel Agency CRM - UI components */
+/* AirZelo - UI components */
 (function () {
   "use strict";
   const QT = window.QT;
@@ -464,7 +464,7 @@
   };
   QT.docFoot = function () {
     const s = QT.state.meta.settings;
-    return h`<div class="foot"><div>${s.invoice_footer || ""}</div><div>Generated ${QT.date(QT.today())} · Travel Agency CRM</div></div>`;
+    return h`<div class="foot"><div>${s.invoice_footer || ""}</div><div>Generated ${QT.date(QT.today())} · AirZelo</div></div>`;
   };
 
   // ---------------------------------------------------------------- misc

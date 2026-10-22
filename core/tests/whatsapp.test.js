@@ -8,7 +8,7 @@ const vm = require("vm");
 
 const QT = {
   h: () => "", esc: (s) => String(s), icon: () => "", el: () => ({}), $: () => null, $$: () => [],
-  raw: (x) => x, opt: () => "", state: { meta: { settings: { business_name: "Demo Travels", business_phone: "+91 98470 00000" } } },
+  raw: (x) => x, opt: () => "", state: { meta: { settings: { business_name: "Demo Travels", business_tagline: "Fly With Us.", business_phone: "+91 98470 00000" } } },
   labels: { method: { upi: "UPI", cash: "Cash" } },
   date: (s) => (s ? s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4) : ""),
   time: (s) => String(s).slice(11, 16),
@@ -132,7 +132,7 @@ t("ticket details message", () => {
     "🛬 To: JED – Jeddah", "📅 Departure: Mon, 02 Nov 2026 · 04:10", "📅 Arrival: Mon, 02 Nov 2026 · 11:05", "✈️ Airline: IndiGo, Emirates",
     "🔢 Flight Number: 6E 1407, EK 803", "🔁 Connection: DXB (Dubai) · 2h 35m layover", "*Return journey*", "🔢 Flight Number: SV 756",
     "👤 Passengers (2):", "Mrs FATHIMA RAHMAN (E-ticket 065-2417545001)", "• ZAYAN RAHMAN\n", "🧳 Baggage: 30 kg", "🎟️ Ticket Status: Ticketed",
-    "We wish you a safe, comfortable, and wonderful journey! 🌍💙", "DEMO TRAVELS — Your Journey, Our Care."]) assert.ok(m.includes(s), s + "\n---\n" + m);
+    "We wish you a safe, comfortable, and wonderful journey! 🌍💙", "DEMO TRAVELS — Fly With Us."]) assert.ok(m.includes(s), s + "\n---\n" + m);
   assert.ok(!/Arrival: [^\n]*20 Nov/.test(m)); // the return arrival is not saved, so no arrival line is invented for it
   assert.strictEqual((m.match(/📅 Arrival/g) || []).length, 1);
   assert.ok(!/payment|50100012345678/i.test(m));

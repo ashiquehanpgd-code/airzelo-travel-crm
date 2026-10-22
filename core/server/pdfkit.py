@@ -4,6 +4,7 @@ Uses the built-in Helvetica fonts (WinAnsi encoding), so no font files are neede
 Characters outside Windows-1252 (e.g. the rupee sign or emoji) are replaced; callers
 write currency as "INR". Coordinates are PDF points from the bottom-left of an A4 page.
 """
+import struct
 import zlib
 
 A4 = (595.28, 841.89)
@@ -199,14 +200,30 @@ class Page:
     def link(self, x, y, w, h, uri):
         self.doc.links.append((self, (x, y, x + w, y + h), uri))
 
+    def image(self, name, x, y, w, h):
+        """Draw an image registered with Document.add_image, scaled into the box (x, y, w, h)."""
+        self.ops.append(("q %.2f 0 0 %.2f %.2f %.2f cm /%s Do Q" % (w, h, x, y, name)).encode())
+
 
 class Document:
     def __init__(self, title="", author=""):
         self.pages = []
         self.shadings = []
         self.links = []
+        self.images = []
         self.title = title
         self.author = author
+
+    def add_image(self, data):
+        """Register PNG or JPEG bytes. Returns (name, width, height), or None if the image cannot be embedded."""
+        try:
+            obj = _image_object(data)
+        except (ValueError, IndexError, struct.error, zlib.error):
+            return None
+        if not obj:
+            return None
+        self.images.append(obj)
+        return "Im%d" % len(self.images), obj["w"], obj["h"]
 
     def new_page(self):
         p = Page(self)
@@ -233,6 +250,18 @@ class Document:
                                 "/Function << /FunctionType 2 /Domain [0 1] /C0 [%.3f %.3f %.3f] /C1 [%.3f %.3f %.3f] /N 1 >> >>"
                                 % (co + c1 + c2)).encode()))
         shading_res = " ".join("/Sh%d %d 0 R" % (i + 1, r) for i, r in enumerate(sh_refs))
+        img_refs = []
+        for im in self.images:
+            smask = ""
+            if im.get("alpha") is not None:
+                a = zlib.compress(im["alpha"])
+                sm = add(b"<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceGray /BitsPerComponent 8 "
+                         b"/Filter /FlateDecode /Length %d >>\nstream\n" % (im["w"], im["h"], len(a)) + a + b"\nendstream")
+                smask = " /SMask %d 0 R" % sm
+            img_refs.append(add(("<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /%s /BitsPerComponent 8 "
+                                 "/Filter /%s%s /Length %d >>\nstream\n" % (im["w"], im["h"], im["cs"], im["filter"], smask, len(im["data"]))).encode()
+                                + im["data"] + b"\nendstream"))
+        xobj_res = " ".join("/Im%d %d 0 R" % (i + 1, r) for i, r in enumerate(img_refs))
         page_ids = []
         for pg in self.pages:
             data = zlib.compress(b"\n".join(pg.ops))
@@ -243,13 +272,14 @@ class Document:
                     annots.append(add(("<< /Type /Annot /Subtype /Link /Rect [%.2f %.2f %.2f %.2f] /Border [0 0 0] /A << /S /URI /URI (" % rect).encode()
                                       + _esc(uri) + b") >> >>"))
             page_ids.append(add(("<< /Type /Page /Parent %d 0 R /MediaBox [0 0 %.2f %.2f] /Contents %d 0 R "
-                                 "/Resources << /Font << /F1 %d 0 R /F2 %d 0 R >>%s >>%s >>"
+                                 "/Resources << /Font << /F1 %d 0 R /F2 %d 0 R >>%s%s >>%s >>"
                                  % (pages, A4[0], A4[1], content, f1, f2,
                                     (" /Shading << %s >>" % shading_res) if sh_refs else "",
+                                    (" /XObject << %s >>" % xobj_res) if img_refs else "",
                                     (" /Annots [%s]" % " ".join("%d 0 R" % a for a in annots)) if annots else "")).encode()))
         objs[catalog - 1] = ("<< /Type /Catalog /Pages %d 0 R >>" % pages).encode()
         objs[pages - 1] = ("<< /Type /Pages /Kids [%s] /Count %d >>" % (" ".join("%d 0 R" % p for p in page_ids), len(page_ids))).encode()
-        info = add(b"<< /Title (" + _esc(self.title) + b") /Author (" + _esc(self.author) + b") /Producer (Travel Agency CRM) >>")
+        info = add(b"<< /Title (" + _esc(self.title) + b") /Author (" + _esc(self.author) + b") /Producer (AirZelo) >>")
         out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
         offsets = []
         for i, body in enumerate(objs):
@@ -261,3 +291,87 @@ class Document:
             out += b"%010d 00000 n \n" % off
         out += b"trailer\n<< /Size %d /Root %d 0 R /Info %d 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, catalog, info, xref)
         return bytes(out)
+
+
+def _image_object(data):
+    """PDF image XObject parts for JPEG (embedded as is) or 8-bit non-interlaced PNG (decoded; alpha kept as a soft mask)."""
+    if data[:2] == b"\xff\xd8":
+        i = 2
+        while i + 9 < len(data):
+            if data[i] != 0xFF:
+                i += 1
+                continue
+            m = data[i + 1]
+            if m in (0xD8, 0x01) or 0xD0 <= m <= 0xD7:
+                i += 2
+                continue
+            seg = struct.unpack(">H", data[i + 2:i + 4])[0]
+            if m in (0xC0, 0xC1, 0xC2):
+                h, w = struct.unpack(">HH", data[i + 5:i + 9])
+                comps = data[i + 9]
+                cs = {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(comps)
+                return {"w": w, "h": h, "cs": cs, "filter": "DCTDecode", "data": data} if cs else None
+            i += 2 + seg
+        return None
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    pos, idat, palette, trns = 8, bytearray(), None, None
+    w = h = depth = ctype = interlace = None
+    while pos < len(data):
+        ln, typ = struct.unpack(">I4s", data[pos:pos + 8])
+        body = data[pos + 8:pos + 8 + ln]
+        if typ == b"IHDR":
+            w, h, depth, ctype, _, _, interlace = struct.unpack(">IIBBBBB", body)
+        elif typ == b"PLTE":
+            palette = body
+        elif typ == b"tRNS":
+            trns = body
+        elif typ == b"IDAT":
+            idat += body
+        elif typ == b"IEND":
+            break
+        pos += 12 + ln
+    if depth != 8 or interlace or ctype not in (0, 2, 3, 4, 6):
+        return None
+    bpp = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[ctype]
+    raw = zlib.decompress(bytes(idat))
+    stride = w * bpp
+    out = bytearray(h * stride)
+    prev = bytearray(stride)
+    for r in range(h):
+        f = raw[r * (stride + 1)]
+        line = bytearray(raw[r * (stride + 1) + 1:(r + 1) * (stride + 1)])
+        for i in range(stride):
+            a = line[i - bpp] if i >= bpp else 0
+            b = prev[i]
+            c = prev[i - bpp] if i >= bpp else 0
+            if f == 1:
+                line[i] = (line[i] + a) & 255
+            elif f == 2:
+                line[i] = (line[i] + b) & 255
+            elif f == 3:
+                line[i] = (line[i] + ((a + b) >> 1)) & 255
+            elif f == 4:
+                pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        out[r * stride:(r + 1) * stride] = line
+        prev = line
+    if ctype == 3:  # palette -> RGB (+ alpha from tRNS)
+        if not palette:
+            return None
+        rgb, alpha = bytearray(), bytearray()
+        for idx in out:
+            rgb += palette[idx * 3:idx * 3 + 3]
+            alpha.append(trns[idx] if trns and idx < len(trns) else 255)
+        return {"w": w, "h": h, "cs": "DeviceRGB", "filter": "FlateDecode", "data": zlib.compress(bytes(rgb)),
+                "alpha": bytes(alpha) if trns else None}
+    if ctype in (0, 2):
+        return {"w": w, "h": h, "cs": "DeviceGray" if ctype == 0 else "DeviceRGB", "filter": "FlateDecode", "data": zlib.compress(bytes(out))}
+    n = 1 if ctype == 4 else 3
+    color = bytearray()
+    alpha = bytearray()
+    for i in range(0, len(out), n + 1):
+        color += out[i:i + n]
+        alpha.append(out[i + n])
+    return {"w": w, "h": h, "cs": "DeviceGray" if n == 1 else "DeviceRGB", "filter": "FlateDecode",
+            "data": zlib.compress(bytes(color)), "alpha": bytes(alpha)}

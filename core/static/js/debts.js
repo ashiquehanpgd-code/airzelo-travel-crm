@@ -1,4 +1,4 @@
-/* Travel Agency CRM - debts & loans: loan money received and repaid through the cash / bank ledger */
+/* AirZelo - debts & loans: loan money received and repaid through the cash / bank ledger */
 (function () {
   "use strict";
   const QT = window.QT;

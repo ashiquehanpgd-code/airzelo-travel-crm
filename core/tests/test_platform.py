@@ -142,7 +142,7 @@ class DesktopEntryPoints(unittest.TestCase):
             self.assertIsNotNone(port)
             with urllib.request.urlopen("http://127.0.0.1:%d/" % port, timeout=10) as r:
                 self.assertEqual(r.status, 200)
-                self.assertIn(b"Travel Agency CRM", r.read())
+                self.assertIn(b"AirZelo", r.read())
         finally:
             p.terminate()
             p.wait(timeout=20)
@@ -150,7 +150,7 @@ class DesktopEntryPoints(unittest.TestCase):
 
 class NoQuickTripData(unittest.TestCase):
     def test_product_contains_no_quick_trip_identifiers(self):
-        pattern = ("Quick Trip", "QUICK TRIP", "QuickTrip", "quicktrip", "00000000000000", "0000000000", "XXXX0000000", "REDACTED-BRANCH", "AirZelo")
+        pattern = ("Quick Trip", "QUICK TRIP", "QuickTrip", "quicktrip", "00000000000000", "0000000000", "XXXX0000000", "REDACTED-BRANCH", "Your Journey, Our Care", "QT/INV")
         hits = []
         for p in list((ROOT / "server").rglob("*.py")) + list((ROOT / "static").rglob("*")) + [ROOT / "run.py"]:
             if p.is_file() and p.suffix in (".py", ".js", ".html", ".css", ".svg"):

@@ -136,7 +136,7 @@
         <div class="card"><div class="card-h"><h3>Session</h3></div><form class="card-b form-grid" data-f onsubmit="return false">
           ${QT.field({ name: "session_hours", label: "Sign out after inactivity (hours)", type: "number", span: 12, value: s.session_hours, attrs: 'min="1" max="72"' })}
           <div class="f s12"><button class="btn primary" type="button" data-save style="align-self:flex-start">Save</button></div>
-          <div class="f s12"><div class="alert info small">${QT.raw(icon("shield"))}<div>Travel Agency CRM listens only on <b>127.0.0.1</b> (this computer). Passwords are stored as salted PBKDF2 hashes. Customer documents are only served to a signed-in session. Data folder permissions are restricted to your macOS user.</div></div></div></form></div></div>`.html;
+          <div class="f s12"><div class="alert info small">${QT.raw(icon("shield"))}<div>AirZelo listens only on <b>127.0.0.1</b> (this computer). Passwords are stored as salted PBKDF2 hashes. Customer documents are only served to a signed-in session. Data folder permissions are restricted to your macOS user.</div></div></div></form></div></div>`.html;
       $("[data-cp]", pane).onclick = async () => {
         const f = $("[data-pw]", pane);
         const d = QT.formData(f);
@@ -155,7 +155,7 @@
             ${QT.field({ name: "backup_keep", label: "Keep the latest N automatic backups", type: "number", span: 12, value: s.backup_keep, attrs: 'min="3" max="1000"', hint: "Manual and pre-restore backups are never removed automatically" })}
             <div class="f s12"><button class="btn primary" type="button" data-save style="align-self:flex-start">Save</button></div></form></div>
           <div class="card"><div class="card-h"><h3>Restore from a file</h3></div><div class="card-b stack" style="gap:10px">
-            <div class="small muted">Upload a Travel Agency CRM backup (.zip). It is verified first, and a safety backup of your current data is taken before anything is replaced.</div>
+            <div class="small muted">Upload a AirZelo backup (.zip). It is verified first, and a safety backup of your current data is taken before anything is replaced.</div>
             <input type="file" class="inp" accept=".zip" data-upfile><button class="btn danger" data-uprestore>${QT.raw(icon("upload"))}Verify & restore upload</button></div></div>
         </div></div>`.html;
       QT.renderTable($("[data-list]", pane), { rows: data.backups, sortable: false, emptyTitle: "No backups yet", empty: "Click “Back up now” to create the first one.", emptyIcon: "database", columns: [

@@ -4,7 +4,7 @@ create a synthetic agency, start the core on a free port, sign in, record a book
 figures, make and verify a backup, then stop cleanly and confirm the database is consistent.
 
   python3 build/smoke_test.py --python <bundled python> --core <path to core/run.py>
-  python3 build/smoke_test.py --app "dist/mac-arm64/Travel Agency CRM.app"     (macOS app bundle)
+  python3 build/smoke_test.py --app "dist/mac-arm64/AirZelo.app"     (macOS app bundle)
   python3 build/smoke_test.py --app "dist/win-unpacked"                         (Windows unpacked build)
 """
 import argparse

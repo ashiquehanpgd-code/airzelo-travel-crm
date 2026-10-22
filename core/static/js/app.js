@@ -1,4 +1,4 @@
-/* Travel Agency CRM - shell, auth and router */
+/* AirZelo - shell, auth and router */
 (function () {
   "use strict";
   const QT = window.QT;
@@ -226,7 +226,7 @@
   function authLayout(formHtml) {
     $("#app").innerHTML = h`<div class="auth">
       <div class="auth-art">
-        <div class="brand" style="padding:0"><div class="brand-mark">${QT.raw(icon("plane"))}</div><div><div class="brand-name">Travel Agency CRM</div><div class="brand-sub">Travel agency desk</div></div></div>
+        <div class="brand" style="padding:0"><div class="brand-mark">${QT.raw(icon("plane"))}</div><div><div class="brand-name">AirZelo</div><div class="brand-sub">Travel agency desk</div></div></div>
         ${QT.raw('<svg class="plane" viewBox="0 0 24 24" fill="#fff">' + '<path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>')}
         <div><h2>Every PNR, payment and rupee of margin — in one place.</h2>
         <p style="margin-top:12px">Bookings, customers, supplier balances, refunds and profit, stored privately on this Mac.</p></div>
@@ -237,7 +237,7 @@
   }
   function showLogin() {
     authLayout(h`<form id="login" autocomplete="on">
-      <div><h1>Welcome back</h1><div class="muted">Sign in to Travel Agency CRM</div></div>
+      <div><h1>Welcome back</h1><div class="muted">Sign in to AirZelo</div></div>
       <div class="f s12"><label>Username</label><input class="inp" name="username" autocomplete="username" required></div>
       <div class="f s12"><label>Password</label><input class="inp" type="password" name="password" autocomplete="current-password" required></div>
       <button class="btn primary" type="submit">Sign in</button>
@@ -258,7 +258,7 @@
   function showSetup() {
     authLayout(h`<form id="setup" autocomplete="off">
       <div><h1>Set up your owner login</h1><div class="muted">This is a one-time step. Only you will be able to sign in.</div></div>
-      <div class="alert info">${QT.raw(icon("info"))}<div>Enter the 6-digit <b>setup code</b> shown in the Terminal window where Travel Agency CRM is running.</div></div>
+      <div class="alert info">${QT.raw(icon("info"))}<div>Enter the 6-digit <b>setup code</b> shown in the Terminal window where AirZelo is running.</div></div>
       <div class="f s12"><label>Setup code</label><input class="inp mono" name="setup_code" inputmode="numeric" maxlength="6" required></div>
       <div class="f s12"><label>Username</label><input class="inp" name="username" autocomplete="username" required></div>
       <div class="f s12"><label>Password</label><input class="inp" type="password" name="password" autocomplete="new-password" required><span class="hint">At least 10 characters, mixing letters, numbers or symbols.</span></div>
@@ -289,7 +289,7 @@
     let st;
     try { st = await QT.get("/api/auth/status"); }
     catch (e) {
-      $("#app").innerHTML = h`<div class="empty-state" style="padding-top:20vh">${QT.raw(icon("alert"))}<h4>Cannot reach Travel Agency CRM</h4><div>Start the app, then reload this page.</div></div>`.html;
+      $("#app").innerHTML = h`<div class="empty-state" style="padding-top:20vh">${QT.raw(icon("alert"))}<h4>Cannot reach AirZelo</h4><div>Start the app, then reload this page.</div></div>`.html;
       return;
     }
     if (st.setup_needed) return showSetup();

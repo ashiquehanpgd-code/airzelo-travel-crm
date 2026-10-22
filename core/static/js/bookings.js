@@ -24,7 +24,7 @@
         </div>
         <datalist id="airlines-dl">${QT.raw(QT.AIRLINES.map((a) => '<option value="' + esc(a) + '">').join(""))}</datalist>
       </div>
-      <div class="alert info" style="margin:14px 0">${QT.raw(icon("info"))}<div>This searches <b>bookings saved in Travel Agency CRM</b>. It does not connect to airline or GDS systems, so live reservation status is not retrieved.</div></div>
+      <div class="alert info" style="margin:14px 0">${QT.raw(icon("info"))}<div>This searches <b>bookings saved in AirZelo</b>. It does not connect to airline or GDS systems, so live reservation status is not retrieved.</div></div>
       <div data-results></div>`.html;
     const form = $("[data-form]", view);
     const res = $("[data-results]", view);

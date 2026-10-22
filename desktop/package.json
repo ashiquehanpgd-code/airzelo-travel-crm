@@ -1,8 +1,8 @@
 {
-  "name": "travel-agency-crm",
-  "productName": "Travel Agency CRM",
+  "name": "airzelo",
+  "productName": "AirZelo",
   "version": "0.1.0",
-  "description": "Travel agency CRM and accounting for Windows and macOS (placeholder product name)",
+  "description": "AirZelo - travel agency CRM and accounting for Windows and macOS",
   "author": "Placeholder Publisher",
   "license": "UNLICENSED",
   "private": true,
@@ -19,7 +19,7 @@
   },
   "build": {
     "appId": "com.placeholder.travelagencycrm",
-    "productName": "Travel Agency CRM",
+    "productName": "AirZelo",
     "copyright": "Copyright © 2026 Placeholder Publisher",
     "directories": { "output": "../dist", "buildResources": "resources" },
     "files": ["main.js", "preload.js", "launcher/**", "package.json"],
@@ -46,7 +46,7 @@
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
-      "shortcutName": "Travel Agency CRM"
+      "shortcutName": "AirZelo"
     }
   }
 }

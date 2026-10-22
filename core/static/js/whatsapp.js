@@ -95,7 +95,8 @@
   };
   wa.hasPaymentDetails = (pd) => !!wa.paymentBlock(pd);
   const PAY_NOTE = "Please verify the beneficiary details before confirming payment. After completing the payment, kindly share your payment confirmation with us. 😊";
-  const tagline = () => bizName().toUpperCase() + " — Your Journey, Our Care.";
+  // sign-off line: the agency's name plus its own tagline from Settings (no built-in slogan)
+  const tagline = () => bizName().toUpperCase() + (biz().business_tagline ? " — " + biz().business_tagline : "");
   const money = (m) => QT.money(m);
   const when = (date, time) => [date, time].filter(Boolean).join(" · ") || null;
   const refLine = (b) => "🎫 Booking Reference: " + (b.pnr || b.ref);
@@ -380,7 +381,7 @@
       const box = $("[data-attach]", body);
       if (!box) return;
       box.innerHTML = h`<div class="wa-step done"><span class="n">1</span><div class="grow"><b>PDF saved on this Mac</b>
-          <div class="wa-file">${QT.raw(icon("file"))}<span>${att.name}</span></div><div class="small muted">Documents › Travel Agency CRM › Tickets</div>
+          <div class="wa-file">${QT.raw(icon("file"))}<span>${att.name}</span></div><div class="small muted">Documents › AirZelo › Tickets</div>
           <div class="row" style="gap:6px;margin-top:6px"><button type="button" class="btn xs" data-reveal>${QT.raw(icon("search"))}Show in Finder</button><button type="button" class="btn xs" data-open-pdf>${QT.raw(icon("file"))}Open PDF</button></div></div></div>
         <div class="wa-step ${state === "opened" ? "done" : ""}"><span class="n">2</span><div class="grow"><b>Open WhatsApp</b> with the message below${state === "opened" ? " — opened" : ""}</div></div>
         <div class="wa-step"><span class="n">3</span><div class="grow"><b>Attach the PDF in WhatsApp</b>, then press Send. Drag the file from the Finder window into the chat, or click 📎 → Document and pick <b>${att.name}</b>.</div></div>`.html;
@@ -446,7 +447,7 @@
     if (td.payment.pending <= 0) { QT.toast("This booking is fully paid — no payment reminder is needed.", "err"); return false; }
     return true;
   };
-  // save the PDF on this Mac (Documents › Travel Agency CRM › Tickets); action "open" = Preview, "reveal" = Finder
+  // save the PDF on this Mac (Documents › AirZelo › Tickets); action "open" = Preview, "reveal" = Finder
   wa.savePdf = async function (bookingId, variant, action) {
     const r = await QT.post("/api/bookings/" + bookingId + "/ticket-file", { variant, action: action || "" });
     if (action && !r.opened) await QT.download("/api/bookings/" + bookingId + "/ticket.pdf?variant=" + variant, r.name);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start the Travel Agency CRM core for one company file (agency data folder).
+"""Start the AirZelo core for one company file (agency data folder).
 
   python3 run.py --data DIR                 start on http://127.0.0.1:8765 for the agency in DIR
   python3 run.py --data DIR --port 0        pick a free port (prints "TACRM_READY port=N")
@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 if sys.version_info < (3, 8):
-    sys.exit("Travel Agency CRM needs Python 3.8 or newer.")
+    sys.exit("AirZelo needs Python 3.8 or newer.")
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
@@ -59,7 +59,7 @@ def create_agency(data_dir):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Travel Agency CRM core")
+    ap = argparse.ArgumentParser(description="AirZelo core")
     ap.add_argument("--host", default=os.environ.get("TACRM_HOST", "127.0.0.1"),
                     help="Interface to bind (default 127.0.0.1 - this computer only)")
     ap.add_argument("--port", type=int, default=int(os.environ.get("TACRM_PORT", "8765")))

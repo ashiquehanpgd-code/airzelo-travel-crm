@@ -1,4 +1,4 @@
-// Travel Agency CRM - offline ticket reader.
+// AirZelo - offline ticket reader.
 //
 // Reads the text of a ticket file entirely on this Mac:
 //   * PDFs with embedded text  -> PDFKit (exact text, no OCR)

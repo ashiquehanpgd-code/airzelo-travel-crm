@@ -1,4 +1,4 @@
-"""Local HTTP server for Travel Agency CRM (standard library only).
+"""Local HTTP server for AirZelo (standard library only).
 
 Security model:
   * binds to 127.0.0.1 by default (not reachable from other devices)
@@ -23,7 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, quote
 
-from . import VERSION, auth, backup, services, reports, finance, ticket, ticketscan, debts, upgrade
+from . import VERSION, auth, backup, services, reports, finance, ticket, ticketscan, debts, upgrade, branding
 from .db import connect, migrate, get_setting
 from .errors import ApiError, NotFound, Unauthorized, Forbidden, ValidationError
 
@@ -628,6 +628,21 @@ def r_settings(req):
     return J(services.update_settings(req.conn, req.json()))
 
 
+@route("POST", r"/api/settings/logo")
+def r_settings_logo(req):
+    return J({"logo": services.set_logo(req.conn, req.ctx, req.json()), "settings": services.get_settings(req.conn)})
+
+
+@route("GET", r"/api/branding/logo")
+def r_branding_logo(req):
+    """The current logo, or a specific stored one (?f=logo-<hash>.png) for documents issued with an older logo."""
+    name = req.q("f") or get_setting(req.conn, "logo_file", "")
+    path = branding.logo_path(req.ctx, name)
+    if not path:
+        raise NotFound("No logo")
+    return Resp(path.read_bytes(), 200, "image/png" if path.suffix == ".png" else "image/jpeg", {"Cache-Control": "private, max-age=86400"})
+
+
 @route("POST", r"/api/currencies")
 def r_currency(req):
     return J(services.save_currency(req.conn, req.json()))
@@ -782,7 +797,7 @@ def make_handler(ctx, log=print):
         allowed_hosts.add("%s:%d" % (ctx.host, ctx.port))
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "TravelAgencyCRM/" + VERSION
+        server_version = "AirZelo/" + VERSION
         sys_version = ""
         protocol_version = "HTTP/1.1"
 
@@ -827,7 +842,7 @@ def make_handler(ctx, log=print):
         def dispatch(self, method):
             host = (self.headers.get("Host") or "").lower()
             if host not in allowed_hosts:
-                return self._err(421, "Unrecognised host. Open Travel Agency CRM at http://127.0.0.1:%d" % ctx.port, "bad_host")
+                return self._err(421, "Unrecognised host. Open AirZelo at http://127.0.0.1:%d" % ctx.port, "bad_host")
             u = urlparse(self.path)
             path = u.path
             if not path.startswith("/api/"):
@@ -924,7 +939,7 @@ def serve(data_dir, host="127.0.0.1", port=8765, open_browser=False, log=print):
     auto.start()
     url = "http://127.0.0.1:%d" % port if host in ("127.0.0.1", "0.0.0.0") else "http://%s:%d" % (host, port)
     log("")
-    log("  Travel Agency CRM %s is running at  %s" % (VERSION, url))
+    log("  AirZelo %s is running at  %s" % (VERSION, url))
     log("  Data folder: %s" % ctx.data_dir)
     if host not in ("127.0.0.1", "localhost", "::1"):
         log("  WARNING: bound to %s - other devices on your network may reach this app." % host)
@@ -969,5 +984,5 @@ def serve(data_dir, host="127.0.0.1", port=8765, open_browser=False, log=print):
             c.close()
         finally:
             ctx.gate.release_write()
-        log("  Travel Agency CRM stopped. All data is saved.")
+        log("  AirZelo stopped. All data is saved.")
     return ctx

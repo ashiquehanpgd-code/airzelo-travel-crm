@@ -1,4 +1,4 @@
-// Travel Agency CRM - desktop shell (Electron).
+// AirZelo - desktop shell (Electron).
 // Shows the agency (company file) chooser, starts the bundled Python core for the chosen agency on a free
 // localhost port, and shows the CRM in the window. Each agency is a separate folder with its own database,
 // attachments and backups, so agencies never share data.
@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const PRODUCT = 'Travel Agency CRM'; // placeholder product name
+const PRODUCT = 'AirZelo'; // placeholder product name
 const isWin = process.platform === 'win32';
 
 // TACRM_USER_DATA: separate data folder for automated tests (never set for customers)

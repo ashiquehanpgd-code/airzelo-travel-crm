@@ -532,6 +532,19 @@ DEFAULT_SETTINGS = {
     "pay_bank_name": "",
     "pay_upi_number": "",
     "pay_upi_apps": "Google Pay, PhonePe, BHIM UPI",
+    # company profile / white-label branding (each agency sets its own; nothing is pre-filled)
+    "legal_name": "",
+    "business_country": "India",
+    "business_website": "",
+    "business_registration": "",
+    "receipt_footer": "Thank you for your payment.",
+    "brand_color": "#1B3FCC",
+    "logo_file": "",
+    "receipt_prefix": "RCT",
+    "date_format": "DD MMM YYYY",
+    "currency_display": "symbol",
+    "report_default_period": "month",
+    "setup_completed": "0",
 }
 
 DEFAULT_CURRENCIES = [

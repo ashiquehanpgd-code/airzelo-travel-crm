@@ -1,4 +1,4 @@
-"""Business logic for Travel Agency CRM. All writes go through here inside atomic
+"""Business logic for AirZelo. All writes go through here inside atomic
 transactions, with an audit trail of every change to financial data."""
 import base64
 import hashlib
@@ -81,7 +81,24 @@ EDITABLE_SETTINGS = ("business_name", "business_tagline", "business_address", "b
                      "business_gstin", "business_state", "invoice_prefix", "credit_note_prefix", "invoice_terms",
                      "invoice_footer", "auto_backup_hours", "backup_keep", "session_hours",
                      "pay_account_name", "pay_account_number", "pay_ifsc", "pay_branch", "pay_bank_name",
-                     "pay_upi_number", "pay_upi_apps")
+                     "pay_upi_number", "pay_upi_apps",
+                     # company profile, white-label branding and document preferences
+                     "legal_name", "business_country", "business_website", "business_registration", "receipt_footer",
+                     "brand_color", "booking_prefix", "receipt_prefix", "date_format", "currency_display",
+                     "report_default_period", "setup_completed")
+# cosmetic / identity settings: changing them never touches posted money or issued documents
+CHOICE_SETTINGS = {"date_format": ("DD/MM/YYYY", "DD MMM YYYY", "MM/DD/YYYY", "YYYY-MM-DD"),
+                   "currency_display": ("symbol", "code"),
+                   "report_default_period": ("month", "fy", "year", "week", "today"),
+                   "setup_completed": ("0", "1")}
+PREFIX_SETTINGS = ("invoice_prefix", "credit_note_prefix", "booking_prefix", "receipt_prefix")
+FORMAT_RULES = {
+    "business_email": (r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$", "Enter a valid email address"),
+    "business_phone": (r"^[+0-9][0-9 ()\-]{5,24}$", "Enter a valid phone number (digits, spaces, + ( ) -)"),
+    "business_website": (r"^(https?://)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+(/\S*)?$", "Enter a website such as www.example.com"),
+    "brand_color": (r"^#[0-9A-Fa-f]{6}$", "Brand colour must be a hex colour such as #1B3FCC"),
+    "business_gstin": (r"^[0-9]{2}[A-Z0-9]{10}[0-9A-Z]{3}$", "GSTIN must be 15 characters, e.g. 32ABCDE1234F1Z5"),
+}
 PAYMENT_FORMATS = {"pay_account_number": (r"^\d{9,18}$", "Account number must be 9 to 18 digits"),
                    "pay_ifsc": (r"^[A-Z]{4}0[A-Z0-9]{6}$", "IFSC code must look like ABCD0123456 (11 characters)"),
                    "pay_upi_number": (r"^\d{10}$", "UPI payment number must be a 10-digit mobile number")}
@@ -109,8 +126,16 @@ def update_settings(conn, data):
                     if not lim[0] <= n <= lim[1]:
                         raise ValidationError("%s must be between %d and %d" % (k, lim[0], lim[1]), k)
                     val = str(n)
-                if k in ("pay_ifsc", "pay_account_name"):
+                if k in ("pay_ifsc", "pay_account_name", "business_gstin"):
                     val = val.upper()
+                if k == "business_name" and not val:
+                    raise ValidationError("The display name cannot be empty", k)
+                if k in CHOICE_SETTINGS and val not in CHOICE_SETTINGS[k]:
+                    raise ValidationError("%s must be one of: %s" % (k.replace("_", " ").capitalize(), ", ".join(CHOICE_SETTINGS[k])), k)
+                if k in PREFIX_SETTINGS and not re.match(r"^[A-Za-z0-9][A-Za-z0-9/_\-]{0,11}$", val):
+                    raise ValidationError("Prefix must be 1-12 letters, digits, / _ or -, e.g. INV/", k)
+                if k in FORMAT_RULES and val and not re.match(FORMAT_RULES[k][0], val):
+                    raise ValidationError(FORMAT_RULES[k][1], k)
                 if k in ("pay_account_number", "pay_upi_number"):
                     val = val.replace(" ", "")
                 if k in PAYMENT_FORMATS and val and not re.match(PAYMENT_FORMATS[k][0], val):
@@ -1167,7 +1192,7 @@ def create_transaction(conn, data):
                                "Confirm to record it anyway." % dup["txn_no"], "possible_duplicate", {"txn_no": dup["txn_no"]})
 
         n = next_counter(conn, "txn-" + TXN_PREFIX[kind])
-        txn_no = "%s-%06d" % (TXN_PREFIX[kind], n)
+        txn_no = "%s-%06d" % (_txn_prefix(conn, kind), n)
         ts = now_iso()
         cur = conn.execute(
             "INSERT INTO transactions(txn_no, uid, idem_key, txn_date, kind, sign, amount, currency, exchange_rate, rate_date, base_amount, "
@@ -1192,6 +1217,12 @@ def create_transaction(conn, data):
     return tid, False
 
 
+def _txn_prefix(conn, kind):
+    if kind == "customer_receipt":
+        return (get_setting(conn, "receipt_prefix", "") or TXN_PREFIX[kind]).rstrip("-")
+    return TXN_PREFIX[kind]
+
+
 def _fmt_base(minor):
     from .money import fmt
     return fmt(minor)
@@ -1209,7 +1240,7 @@ def reverse_transaction(conn, tid, data):
         reason = v.s(data, "reason", 500, True, "Reason")
         rdate = v.d(data, "date") or today()
         n = next_counter(conn, "txn-" + TXN_PREFIX[t["kind"]])
-        txn_no = "%s-%06d" % (TXN_PREFIX[t["kind"]], n)
+        txn_no = "%s-%06d" % (_txn_prefix(conn, t["kind"]), n)
         ts = now_iso()
         cur = conn.execute(
             "INSERT INTO transactions(txn_no, uid, idem_key, txn_date, kind, sign, amount, currency, exchange_rate, rate_date, base_amount, "
@@ -1511,10 +1542,31 @@ def _tax_lines(split, rate, tax_amount, taxable):
     return [{"label": "Tax @ %s%%" % rate, "amount": tax_amount, "taxable": taxable}]
 
 
+SNAPSHOT_KEYS = ("business_name", "business_tagline", "business_address", "business_phone", "business_email", "business_gstin",
+                 "business_state", "invoice_terms", "invoice_footer", "legal_name", "business_country", "business_website",
+                 "business_registration", "logo_file", "brand_color", "date_format")
+
+
 def _business_snapshot(conn):
+    """Company details frozen into an issued document, so later profile edits never change it."""
     st = db.all_settings(conn)
-    return {k: st.get(k, "") for k in ("business_name", "business_tagline", "business_address", "business_phone",
-                                       "business_email", "business_gstin", "business_state", "invoice_terms", "invoice_footer")}
+    return {k: st.get(k, "") for k in SNAPSHOT_KEYS}
+
+
+def set_logo(conn, ctx, payload):
+    """Store a new company logo (or remove it with {"remove": true}); the previous file is kept for issued documents."""
+    from . import branding
+    if payload.get("remove"):
+        name, info = "", None
+    else:
+        name, kind, w, h = branding.save_logo(ctx, payload)
+        info = {"file": name, "type": kind, "width": w, "height": h}
+    with tx(conn):
+        before = db.get_setting(conn, "logo_file", "")
+        if before != name:
+            conn.execute("INSERT INTO settings(key, value) VALUES ('logo_file', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (name,))
+            audit(conn, "settings", None, "logo", {"logo_file": before}, {"logo_file": name})
+    return info
 
 
 def create_invoice(conn, bid, data):
@@ -1529,7 +1581,7 @@ def create_invoice(conn, bid, data):
         issue_date = v.d(data, "issue_date") or today()
         fy = _fy(issue_date)
         n = next_counter(conn, "invoice-" + fy)
-        number = "%s%s/%04d" % (get_setting(conn, "invoice_prefix", "QT/INV/"), fy, n)
+        number = "%s%s/%04d" % (get_setting(conn, "invoice_prefix", "INV/"), fy, n)
         pax = rows(conn.execute("SELECT name, pax_type, ticket_number FROM booking_passengers WHERE booking_id = ? ORDER BY seq", (bid,)))
         segs = rows(conn.execute("SELECT * FROM booking_segments WHERE booking_id = ? ORDER BY seq", (bid,)))
         cust = one(conn.execute("SELECT * FROM customers WHERE id = ?", (b["customer_id"],)))
@@ -1583,7 +1635,7 @@ def create_credit_note(conn, aid, data):
         issue_date = v.d(data, "issue_date") or today()
         fy = _fy(issue_date)
         n = next_counter(conn, "credit-" + fy)
-        number = "%s%s/%04d" % (get_setting(conn, "credit_note_prefix", "QT/CN/"), fy, n)
+        number = "%s%s/%04d" % (get_setting(conn, "credit_note_prefix", "CN/"), fy, n)
         sub = a["customer_credit"] - a["customer_credit_tax"]
         lines = [{"description": "%s credit - booking %s%s" % (a["kind"].replace("_", " ").capitalize(), b["ref"], (" | PNR " + b["pnr"]) if b["pnr"] else ""),
                   "detail": a["notes"] or "", "amount": sub, "sac": ""}]

@@ -56,7 +56,7 @@ def setup_owner(conn, data, setup_code):
     if owner_exists(conn):
         raise Forbidden("The owner account already exists")
     if not setup_code or not hmac.compare_digest(str(data.get("setup_code") or "").strip(), setup_code):
-        raise ValidationError("The setup code is incorrect. It is shown in the window where Travel Agency CRM is running.", "setup_code")
+        raise ValidationError("The setup code is incorrect. It is shown in the window where AirZelo is running.", "setup_code")
     username = str(data.get("username") or "").strip()
     if not 3 <= len(username) <= 60:
         raise ValidationError("Username must be 3-60 characters", "username")

@@ -72,13 +72,21 @@ def create_backup(ctx, kind="manual", note=None):
                     if p.is_file() and not p.name.endswith(".part"):
                         uploads.append(p)
                         files["uploads/" + p.name] = _sha256_file(p)
-            manifest = {"app": "Travel Agency CRM", "app_version": VERSION, "schema_version": schema, "kind": kind,
+            logos = []  # company logos (content-hash names; issued documents refer to them)
+            if (ctx.data_dir / "branding").exists():
+                for p in sorted((ctx.data_dir / "branding").iterdir()):
+                    if p.is_file() and p.name.startswith("logo-") and not p.name.endswith(".part"):
+                        logos.append(p)
+                        files["branding/" + p.name] = _sha256_file(p)
+            manifest = {"app": "AirZelo", "app_version": VERSION, "schema_version": schema, "kind": kind,
                         "note": note or "", "created_at": now_iso(), "files": files}
             part = final.with_suffix(".zip.part")
             with zipfile.ZipFile(part, "w", compression=zipfile.ZIP_DEFLATED) as z:
                 z.write(snap, "agency.db")
                 for p in uploads:
                     z.write(p, "uploads/" + p.name)
+                for p in logos:
+                    z.write(p, "branding/" + p.name)
                 z.writestr("manifest.json", json.dumps(manifest, indent=2))
             with open(part, "rb") as fh:
                 os.fsync(fh.fileno())
@@ -110,7 +118,7 @@ def verify_backup(path):
                 problems.append("manifest.json missing")
             else:
                 manifest = json.loads(z.read("manifest.json"))
-                if manifest.get("app") != "Travel Agency CRM":
+                if manifest.get("app") not in ("AirZelo", "Travel Agency CRM"):  # earlier builds used the working title
                     problems.append("Not a backup made by this app")
                 for fname, digest in (manifest.get("files") or {}).items():
                     if fname not in names:
@@ -191,7 +199,7 @@ def restore_backup(ctx, path):
             with zipfile.ZipFile(path) as z:
                 z.extract("agency.db", staging)
                 for n in z.namelist():
-                    if n.startswith("uploads/") and not n.endswith("/"):
+                    if (n.startswith("uploads/") or n.startswith("branding/logo-")) and not n.endswith("/"):
                         z.extract(n, staging)
             # bring the restored database up to the current schema
             c = connect(staging / "agency.db")
@@ -225,6 +233,13 @@ def restore_backup(ctx, path):
                 os.replace(ctx.upload_dir, old_up)
             os.replace(new_up, ctx.upload_dir)
             shutil.rmtree(old_up, ignore_errors=True)  # its contents are inside the safety backup
+            # logos are merged, never removed: names are content hashes and issued documents may refer to any of them
+            if (staging / "branding").exists():
+                (ctx.data_dir / "branding").mkdir(exist_ok=True)
+                for p in (staging / "branding").iterdir():
+                    dst = ctx.data_dir / "branding" / p.name
+                    if not dst.exists():
+                        os.replace(p, dst)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
         return {"restored": path.name, "safety_backup": safety["name"]}

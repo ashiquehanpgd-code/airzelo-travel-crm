@@ -83,6 +83,24 @@ def payment_details(settings):
     return {k[4:]: (settings.get(k) or "").strip() for k in PAYMENT_KEYS}
 
 
+def _logo_bytes(conn, name):
+    """The agency's logo from its own company folder (next to its database), or None."""
+    if not name or "/" in name or "\\" in name or not name.startswith("logo-"):
+        return None
+    try:
+        db_file = conn.execute("PRAGMA database_list").fetchone()[2]
+        path = Path(db_file).parent / "branding" / name
+        return path.read_bytes() if path.is_file() else None
+    except (OSError, TypeError, IndexError):
+        return None
+
+
+def _shade(hex_color, factor):
+    """Darken (factor < 1) a #RRGGBB colour."""
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+    return "#%02X%02X%02X" % tuple(max(0, min(255, int(v * factor))) for v in (r, g, b))
+
+
 def ticket_data(conn, bid):
     L = Ledger(conn)
     b = L.bookings.get(int(bid))
@@ -140,7 +158,9 @@ def ticket_data(conn, bid):
     return {
         "business": {"name": s.get("business_name") or "Travel Agency", "tagline": s.get("business_tagline") or "",
                      "phone": s.get("business_phone") or "", "email": s.get("business_email") or "",
-                     "address": s.get("business_address") or ""},
+                     "address": s.get("business_address") or "", "website": s.get("business_website") or "",
+                     "gstin": s.get("business_gstin") or "", "brand_color": s.get("brand_color") or "",
+                     "logo": _logo_bytes(conn, s.get("logo_file") or "")},
         "booking": {"id": b["id"], "ref": b["ref"], "pnr": b["pnr"] or "", "status": b["status"], "status_label": STATUS_LABELS[b["status"]],
                     "doc_title": DOC_TITLES[b["status"]], "is_ticketed": b["status"] == "ticketed",
                     "is_confirmed": b["status"] in ("confirmed", "ticketed"), "is_cancelled": b["status"] in ("cancelled", "refunded"),
@@ -216,6 +236,17 @@ class _Layout:
         self.y = 0
 
     def logo(self, p, x, y, size=40, on_dark=True):
+        """The agency's own logo on a white tile when one is set; otherwise the neutral plane mark."""
+        logo = self.td["business"].get("logo")
+        img = self.doc.add_image(logo) if logo else None
+        if img:
+            name, iw, ih = img
+            p.rect(x, y, size, size, fill="#FFFFFF", r=size * 0.18)
+            pad = size * 0.1
+            scale = min((size - 2 * pad) / iw, (size - 2 * pad) / ih)
+            w, h = iw * scale, ih * scale
+            p.image(name, x + (size - w) / 2, y + (size - h) / 2, w, h)
+            return
         p.gradient_rect(x, y, size, size, SKY if on_dark else ROYAL, ROYAL if on_dark else NAVY, r=size * 0.25)
         p.plane(x + size * 0.5, y + size * 0.5, size * 0.62, "#FFFFFF", angle=0)
         p.circle(x + size * 0.76, y + size * 0.27, size * 0.07, fill=SKY if not on_dark else "#FFFFFF")
@@ -225,7 +256,11 @@ class _Layout:
         p = self.page = self.doc.new_page()
         hh = 70 if compact else 104
         top = H - hh
-        p.gradient_rect(0, top, W, hh, NAVY, NAVY2)
+        brand = td["business"].get("brand_color") or ""
+        if re.match(r"^#[0-9A-Fa-f]{6}$", brand):
+            p.gradient_rect(0, top, W, hh, _shade(brand, 0.55), _shade(brand, 0.8))
+        else:
+            p.gradient_rect(0, top, W, hh, NAVY, NAVY2)
         p.rect(0, top - 4, W, 4, fill=SKY)
         # sky "route" arc in the band - subtle aviation motif
         p.line(W - 250, top + 18, W - 30, top + hh - 14, color="#1D3A7A", lw=1.2, dash=(2, 5))
@@ -235,7 +270,7 @@ class _Layout:
         x = M + size + 12
         name = td["business"]["name"].upper()
         p.text(x, top + hh / 2 + (2 if compact else 6), name, 17 if compact else 23, "B", "#FFFFFF", spacing=1.2)
-        tag = td["business"]["tagline"] or "Your Journey, Our Care."
+        tag = td["business"]["tagline"] or td["business"]["website"] or ""
         p.text(x, top + hh / 2 - (11 if compact else 12), tag, 8 if compact else 9, "R", SKY)
         p.text(W - M, top + hh / 2 + (2 if compact else 8), title, 12 if compact else 15, "B", "#FFFFFF", align="right", spacing=0.8)
         if sub:
@@ -252,10 +287,10 @@ class _Layout:
         biz = td["business"]
         p.line(M, 46, W - M, 46, LINE)
         contact = "  |  ".join(x for x in (biz["phone"], biz["email"]) if x)
-        p.text(M, 32, "%s - Your Journey, Our Care." % biz["name"].upper(), 8, "B", NAVY)
+        p.text(M, 32, biz["name"].upper() + (("  |  GSTIN " + biz["gstin"]) if biz.get("gstin") else ""), 8, "B", NAVY)
         if contact:
             p.text(M, 21, contact, 7.5, "R", MUTED)
-        p.text(W - M, 32, "Generated %s from saved booking data" % datetime.now().strftime("%d %b %Y, %H:%M"), 7, "R", MUTED, align="right")
+        p.text(W - M, 32, "Generated %s with AirZelo" % datetime.now().strftime("%d %b %Y, %H:%M"), 7, "R", MUTED, align="right")
         p.text(W - M, 21, "Page %d" % len(self.doc.pages), 7, "R", MUTED, align="right")
 
     def section(self, label):
@@ -546,7 +581,7 @@ def render_pdf(td, variant="ticket"):
 
 
 def tickets_dir():
-    return Path(os.environ.get("TACRM_TICKET_DIR") or (Path.home() / "Documents" / "Travel Agency CRM" / "Tickets"))
+    return Path(os.environ.get("TACRM_TICKET_DIR") or (Path.home() / "Documents" / "AirZelo" / "Tickets"))
 
 
 def save_pdf(td, variant):

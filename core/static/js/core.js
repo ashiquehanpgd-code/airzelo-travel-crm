@@ -1,4 +1,4 @@
-/* Travel Agency CRM - core utilities */
+/* AirZelo - core utilities */
 (function () {
   "use strict";
   const QT = (window.QT = { pages: {}, state: { meta: null } });
@@ -256,7 +256,7 @@
     try {
       res = await fetch(path, init);
     } catch (e) {
-      const err = new Error("Cannot reach Travel Agency CRM. Is the app still running?");
+      const err = new Error("Cannot reach AirZelo. Is the app still running?");
       err.code = "network";
       throw err;
     }
