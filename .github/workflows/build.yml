@@ -20,7 +20,7 @@ jobs:
       matrix:
         include:
           - { name: mac-arm64, os: macos-14, runtime: mac-arm64, dist: "--mac --arm64", app: "dist/mac-arm64/AirZelo.app", exe: "dist/mac-arm64/AirZelo.app/Contents/MacOS/AirZelo", python: "build/runtime/mac-arm64/python/bin/python3" }
-          - { name: mac-x64, os: macos-13, runtime: mac-x64, dist: "--mac --x64", app: "dist/mac/AirZelo.app", exe: "dist/mac/AirZelo.app/Contents/MacOS/AirZelo", python: "build/runtime/mac-x64/python/bin/python3" }
+          - { name: mac-x64, os: macos-15-intel, runtime: mac-x64, dist: "--mac --x64", app: "dist/mac/AirZelo.app", exe: "dist/mac/AirZelo.app/Contents/MacOS/AirZelo", python: "build/runtime/mac-x64/python/bin/python3" }
           - { name: win-x64, os: windows-latest, runtime: win-x64, dist: "--win --x64", app: "dist/win-unpacked", exe: "dist/win-unpacked/AirZelo.exe", python: "build/runtime/win-x64/python/python.exe" }
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -50,6 +50,12 @@ jobs:
           swiftc -O -target x86_64-apple-macos13 core/tools/ticket_reader.swift -o core/build-tmp/reader-x64
           lipo -create core/build-tmp/reader-arm64 core/build-tmp/reader-x64 -output core/bin/ta-ticket-reader
           rm -rf core/build-tmp
+
+      - name: Ticket reader output for the synthetic fixture (PDFKit text order differs between macOS versions)
+        if: runner.os == 'macOS'
+        run: |
+          sw_vers
+          core/bin/ta-ticket-reader core/tests/fixture_ticket.pdf
 
       - name: Core tests on the bundled runtime
         working-directory: core/tests

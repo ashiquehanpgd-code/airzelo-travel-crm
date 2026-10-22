@@ -70,7 +70,7 @@ Store all signing credentials as CI **secrets**, never in the repository.
 
 ## Release checklist (Stage 5)
 
-- [ ] All CI jobs green; real-PC Windows check done; real Intel Mac or `macos-13` smoke test green
+- [ ] All CI jobs green; real-PC Windows check done; real Intel Mac or `macos-15-intel` CI smoke test green
 - [ ] Upgrade test: install the previous release, create data, install the new release, and check that the data opens and the figures are identical
 - [ ] Signed and notarised; Gatekeeper and SmartScreen checked on a clean machine
 - [ ] `THIRD-PARTY-NOTICES` updated; EULA and privacy policy reviewed

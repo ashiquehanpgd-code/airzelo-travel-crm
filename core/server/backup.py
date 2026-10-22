@@ -88,7 +88,7 @@ def create_backup(ctx, kind="manual", note=None):
                 for p in logos:
                     z.write(p, "branding/" + p.name)
                 z.writestr("manifest.json", json.dumps(manifest, indent=2))
-            with open(part, "rb") as fh:
+            with open(part, "r+b") as fh:  # Windows can only fsync a handle opened for writing
                 os.fsync(fh.fileno())
             if final.exists():
                 raise RuntimeError("Backup name collision")
