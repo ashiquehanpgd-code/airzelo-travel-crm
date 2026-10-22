@@ -49,9 +49,15 @@ func ocr(_ image: CGImage) -> (String, Double) {
         return (o.boundingBox, c.string, c.confidence)
     }
     if obs.isEmpty { return ("", 0) }
-    // group into rows by vertical centre
-    let sorted = obs.sorted { $0.0.midY > $1.0.midY }
-    var rows: [[(CGRect, String, Float)]] = []
+    let conf = obs.map { Double($0.2) }.reduce(0, +) / Double(obs.count)
+    return (readingOrder(obs.map { ($0.0, $0.1) }, wideGap: 0.04), conf)
+}
+
+/// Rebuild reading-order lines from positioned text (y grows upwards): rows by vertical centre, cells left to right,
+/// cells far apart joined by a wide gap so table columns stay separable for the parser.
+func readingOrder(_ items: [(CGRect, String)], wideGap: CGFloat) -> String {
+    let sorted = items.sorted { $0.0.midY > $1.0.midY }
+    var rows: [[(CGRect, String)]] = []
     for item in sorted {
         if let last = rows.last, let ref = last.first, abs(ref.0.midY - item.0.midY) < max(ref.0.height, item.0.height) * 0.55 {
             rows[rows.count - 1].append(item)
@@ -65,14 +71,24 @@ func ocr(_ image: CGImage) -> (String, Double) {
         var line = ""
         var prevMax: CGFloat? = nil
         for c in cells {
-            if let p = prevMax { line += (c.0.minX - p > 0.04) ? "    " : " " }
+            if let p = prevMax { line += (c.0.minX - p > wideGap) ? "    " : " " }
             line += c.1
             prevMax = c.0.maxX
         }
         lines.append(line)
     }
-    let conf = obs.map { Double($0.2) }.reduce(0, +) / Double(obs.count)
-    return (lines.joined(separator: "\n"), conf)
+    return lines.joined(separator: "\n")
+}
+
+/// Embedded PDF text in reading order. page.string follows the PDF's internal drawing order, which PDFKit
+/// returns differently across macOS versions (macOS 14 groups by column), so rebuild lines from their positions.
+func pdfText(_ page: PDFPage) -> String {
+    let box = page.bounds(for: .mediaBox)
+    let items = (page.selection(for: box)?.selectionsByLine() ?? []).compactMap { s -> (CGRect, String)? in
+        guard let t = s.string?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+        return (s.bounds(for: page), t)
+    }
+    return items.isEmpty ? (page.string ?? "") : readingOrder(items, wideGap: box.width * 0.04)
 }
 
 func render(_ page: PDFPage, scale: CGFloat) -> CGImage? {
@@ -125,7 +141,7 @@ if let doc = PDFDocument(url: url) {
     var preview = false
     for i in 0..<min(doc.pageCount, maxPages) {
         guard let page = doc.page(at: i) else { continue }
-        let text = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = pdfText(page).trimmingCharacters(in: .whitespacesAndNewlines)
         if i == 0, let p = previewPath, let img = render(page, scale: 1.5) { writePNG(img, to: p); preview = true }
         if text.count >= 40 {
             pages.append(PageText(page: i + 1, method: "pdf-text", text: text, confidence: nil))

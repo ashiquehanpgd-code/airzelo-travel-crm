@@ -80,6 +80,20 @@ def _clean(text):
     return re.sub(r"[ \t]+\n", "\n", text)
 
 
+def _under_header(up, labels):
+    """Value under a column header: a row of cells split by wide gaps followed by a row with the same number of cells.
+    Only used when the label and value are not adjacent, and only when the columns line up exactly."""
+    lines = up.split("\n")
+    for i in range(len(lines) - 1):
+        heads = [c.strip() for c in re.split(r"\s{3,}", lines[i].strip())]
+        hit = next((h for h in heads if h in labels), None)
+        if hit and len(heads) > 1:
+            vals = [c.strip() for c in re.split(r"\s{3,}", lines[i + 1].strip())]
+            if len(vals) == len(heads):
+                return vals[heads.index(hit)]
+    return None
+
+
 def _parse_date(s, ref_year=None):
     """Return (date, explicit_year) for common ticket formats, else (None, False)."""
     s = s.strip().upper().replace(",", " ").replace(".", " ")
@@ -210,8 +224,15 @@ def parse(text, method="pdf-text", ocr_confidence=None):
     if m:
         d, _ = _parse_date(m.group(1))
         issue = d
+    if not issue:   # table layout: label in a header row, value in the same column of the next row
+        v = _under_header(up, ("DATE OF ISSUE", "ISSUE DATE", "ISSUED ON", "TICKET ISSUED", "TICKET ISSUED ON", "BOOKING DATE", "BOOKED ON"))
+        if v:
+            issue, _ = _parse_date(re.sub(r"^[A-Z]{3},?\s+", "", v))
     status = None
     m = re.search(r"\b(?:BOOKING\s+)?STATUS\s*[:\-]?\s*\n?\s*(CONFIRMED|TICKETED|CANCELLED|CANCELED|ON\s*HOLD|HK|OK)\b", up)
+    if not m:
+        v = _under_header(up, ("STATUS", "BOOKING STATUS"))
+        m = re.fullmatch(r"(CONFIRMED|TICKETED|CANCELLED|CANCELED|ON\s*HOLD|HK|OK)", v or "")
     if m:
         s = m.group(1)
         status = {"CONFIRMED": "confirmed", "HK": "confirmed", "OK": "confirmed", "TICKETED": "ticketed", "CANCELLED": "cancelled",
