@@ -3,7 +3,7 @@
   "use strict";
   const QT = window.QT;
   const { h, esc, icon, el, $, $$ } = QT;
-  const TABS = [["business", "Business details", "building"], ["payment", "Payment details", "bank"], ["invoice", "Invoices", "invoice"], ["tax", "Tax / GST", "percent"], ["currencies", "Currencies", "globe"],
+  const TABS = [["business", "Company & branding", "building"], ["payment", "Payment details", "bank"], ["invoice", "Documents & formats", "invoice"], ["tax", "Tax / GST", "percent"], ["currencies", "Currencies", "globe"],
     ["categories", "Expense categories", "expense"], ["backups", "Backup & restore", "database"], ["security", "Security", "shield"]];
 
   QT.pages.settings = async function (view, params, tab) {
@@ -23,17 +23,17 @@
     };
 
     if (tab === "business") {
-      pane.innerHTML = h`<div class="card" style="max-width:860px"><div class="card-h"><h3>Business details</h3><span class="sub">Shown on invoices, receipts and statements</span></div>
-        <form class="card-b form-grid" data-f data-reload-shell="1" onsubmit="return false">
-          ${QT.field({ name: "business_name", label: "Business name", span: 6, value: s.business_name, req: true })}
-          ${QT.field({ name: "business_tagline", label: "Tagline", span: 6, value: s.business_tagline })}
-          ${QT.field({ name: "business_address", label: "Address", type: "textarea", span: 12, value: s.business_address, rows: 2 })}
-          ${QT.field({ name: "business_phone", label: "Phone", span: 4, value: s.business_phone })}
-          ${QT.field({ name: "business_email", label: "Email", span: 4, value: s.business_email })}
-          ${QT.field({ name: "business_gstin", label: "GSTIN", span: 4, value: s.business_gstin, cls: "upper" })}
-          ${QT.field({ name: "business_state", label: "State (for place of supply)", span: 4, value: s.business_state })}
-          <div class="f s12"><button class="btn primary" type="button" data-save style="align-self:flex-start">Save business details</button></div>
-        </form></div>`.html;
+      pane.innerHTML = h`<div class="grid g-side" style="max-width:1200px">
+        <div class="card"><div class="card-h"><h3>Company profile</h3><span class="sub">Shown in the app and on invoices, receipts, statements and ticket PDFs</span></div>
+          <form class="card-b form-grid" data-f data-reload-shell="1" onsubmit="return false">${QT.profileFields(s)}
+            <div class="f s12"><button class="btn primary" type="button" data-save style="align-self:flex-start">Save company profile</button></div></form></div>
+        <div class="stack" style="gap:16px"><div class="card"><div class="card-h"><h3>Logo</h3></div><div class="card-b" data-logo-box></div></div>
+          <div class="card"><div class="card-h"><h3>Brand colour</h3></div><form class="card-b form-grid" data-brand onsubmit="return false">${QT.brandFields(s)}
+            <div class="f s12"><button class="btn primary" type="button" data-save-brand style="align-self:flex-start">Save colour</button></div></form></div>
+          <div class="card"><div class="card-b small muted">Product: AirZelo ${QT.state.meta.version || ""}. Your company branding appears on your documents; the AirZelo product name and licence notices stay with the software. <a href="#/setup">Run the setup wizard again</a></div></div></div></div>`.html;
+      QT.logoBox($("[data-logo-box]", pane), () => location.reload());
+      QT.bindBrandFields(pane);
+      $("[data-save-brand]", pane).onclick = () => saveSettings($("[data-brand]", pane), "Brand colour saved");
     } else if (tab === "payment") {
       pane.innerHTML = h`<div class="grid g-side" style="max-width:1100px"><div class="card"><div class="card-h"><h3>Payment details for customers</h3><span class="sub">Used in WhatsApp payment reminders and the ticket + payment PDF</span></div>
         <form class="card-b form-grid" data-f onsubmit="return false">
@@ -60,15 +60,13 @@
       f.addEventListener("input", prev);
       prev();
     } else if (tab === "invoice") {
-      pane.innerHTML = h`<div class="card" style="max-width:860px"><div class="card-h"><h3>Invoice numbering & text</h3></div>
-        <form class="card-b form-grid" data-f onsubmit="return false">
-          ${QT.field({ name: "invoice_prefix", label: "Invoice prefix", span: 6, value: s.invoice_prefix, hint: "Numbers look like " + (s.invoice_prefix || "") + "2026-27/0001" })}
-          ${QT.field({ name: "credit_note_prefix", label: "Credit note prefix", span: 6, value: s.credit_note_prefix })}
-          ${QT.field({ name: "invoice_terms", label: "Terms printed on invoices", type: "textarea", span: 12, value: s.invoice_terms })}
-          ${QT.field({ name: "invoice_footer", label: "Footer message", span: 12, value: s.invoice_footer })}
-          <div class="f s12"><div class="alert info small">${QT.raw(icon("print"))}<div>Use <b>Print / Save PDF</b> on any invoice, statement or report. In the print dialog on your Mac choose <b>Save as PDF</b> to download it.</div></div></div>
-          <div class="f s12"><button class="btn primary" type="button" data-save style="align-self:flex-start">Save</button></div>
-        </form></div>`.html;
+      pane.innerHTML = h`<div class="grid g-side" style="max-width:1200px"><div class="card"><div class="card-h"><h3>Documents & formats</h3><span class="sub">Numbering, footers, date and currency display</span></div>
+        <form class="card-b form-grid" data-f data-reload-shell="1" onsubmit="return false">${QT.docFields(s)}
+          <div class="f s12"><button class="btn primary" type="button" data-save style="align-self:flex-start">Save</button></div></form></div>
+        <div class="card"><div class="card-h"><h3>Sample invoice</h3><span class="sub">uses your saved settings</span></div><div class="card-b"><div style="background:#fff;color:#0D1833;border-radius:10px;padding:12px;font-size:12px;overflow:auto" data-sample></div>
+          <button class="btn sm" type="button" data-print-sample style="margin-top:10px">${QT.raw(icon("print"))}Print / Save PDF</button></div></div></div>`.html;
+      $("[data-sample]", pane).innerHTML = String(QT.sampleInvoiceHtml());
+      $("[data-print-sample]", pane).onclick = () => QT.print(QT.sampleInvoiceHtml(), "Sample invoice");
     } else if (tab === "tax") {
       const rows = meta.tax_profiles;
       pane.innerHTML = h`<div class="alert warn" style="margin-bottom:14px;max-width:1000px">${QT.raw(icon("alert"))}<div>GST on air tickets and agency services depends on how each transaction is structured (agent vs. principal, service charge vs. markup, place of supply). The templates below are <b>starting points only</b> — have your CA confirm the taxable value, rate, SAC code and CGST/SGST vs IGST before using them. Tax is always kept separate from revenue and profit.</div></div>

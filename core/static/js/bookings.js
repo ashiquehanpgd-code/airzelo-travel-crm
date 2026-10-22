@@ -872,7 +872,7 @@
     const bk = d.booking || {};
     const meta = '<div><b>' + esc(inv.number) + "</b></div><div>Date: " + esc(QT.date(inv.issue_date)) + "</div><div>Booking: " + esc(bk.ref || "") + "</div>" + (bk.pnr ? "<div>PNR: " + esc(bk.pnr) + "</div>" : "") + (d.against ? "<div>Against invoice: " + esc(d.against) + "</div>" : "");
     return h`<div class="doc">
-      ${QT.docHead(cn ? "Credit note" : "Invoice", meta)}
+      ${QT.docHead(cn ? "Credit note" : "Invoice", meta, d.business)}
       ${inv.status === "cancelled" ? QT.raw('<div style="margin-bottom:12px"><span class="stamp">CANCELLED</span> <span style="color:#64738F">' + esc(inv.cancel_reason || "") + "</span></div>") : ""}
       <div class="doc-meta">
         <div class="box"><div class="lbl">Billed to</div><b>${cust.name}</b><div style="white-space:pre-line">${[cust.address, [cust.city, cust.state].filter(Boolean).join(", "), cust.phone, cust.email].filter(Boolean).join("\n")}</div>${cust.gstin ? QT.raw("<div>GSTIN: " + esc(cust.gstin) + "</div>") : ""}</div>
@@ -888,7 +888,7 @@
         <div class="grand"><span>${cn ? "Total credit" : "Total"}</span><span>${QT.money(inv.total, cur)}</span></div>
       </div>
       ${d.business && d.business.invoice_terms ? QT.raw('<div style="margin-top:22px;color:#64738F;font-size:11px"><b>Terms:</b> ' + esc(d.business.invoice_terms) + "</div>") : ""}
-      ${QT.docFoot()}
+      ${QT.docFoot(d.business ? d.business.invoice_footer || "" : undefined)}
     </div>`;
   };
   QT.invoiceView = async function (id) {

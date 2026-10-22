@@ -30,6 +30,7 @@
     [/^\/reports$/, "reports"], [/^\/reports\/([a-z_]+)$/, "reports"],
     [/^\/settings$/, "settings"], [/^\/settings\/([a-z_]+)$/, "settings"],
     [/^\/audit$/, "audit"],
+    [/^\/setup$/, "setup"],
   ];
   const NAV = [
     ["Overview", [["#/dashboard", "dashboard", "Dashboard"], ["#/pnr", "search", "PNR search"]]],
@@ -56,6 +57,8 @@
   async function route() {
     if (!QT.state.authed) return;
     const { path, params } = parseHash();
+    // a new company workspace starts in the setup wizard until it is completed or skipped
+    if (QT.state.meta && QT.state.meta.settings.setup_completed !== "1" && path !== "/setup") { location.hash = "#/setup"; return; }
     let page = null;
     let args = [];
     for (const [rx, name] of ROUTES) {
@@ -105,7 +108,7 @@
     });
     $("#app").innerHTML = h`<div class="shell">
       <aside class="sidebar">
-        <div class="brand"><div class="brand-mark">${QT.raw(icon("plane"))}</div><div><div class="brand-name">${s.business_name || "Travel Agency"}</div><div class="brand-sub">Travel CRM</div></div></div>
+        <div class="brand">${QT.raw(s.logo_file ? '<div class="brand-mark logo"><img src="' + esc(QT.logoUrl(s.logo_file)) + '" alt=""></div>' : '<div class="brand-mark">' + icon("plane") + "</div>")}<div><div class="brand-name">${s.business_name || "Travel Agency"}</div><div class="brand-sub">Travel CRM</div></div></div>
         ${QT.raw(nav)}
         <div class="sidebar-foot">
           <button type="button" data-theme-toggle>${QT.raw(icon(QT.isDark() ? "sun" : "moon"))}<span>${QT.isDark() ? "Light mode" : "Dark mode"}</span></button>

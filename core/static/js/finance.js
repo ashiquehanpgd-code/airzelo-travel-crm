@@ -400,7 +400,7 @@
       <div class="totals"><div class="grand"><span>Total</span><span>${QT.money(t.amount, t.currency)}</span></div>${t.currency !== QT.base() ? QT.raw("<div><span>Equivalent @ " + esc(t.exchange_rate) + "</span><span>" + QT.money(t.base_amount) + "</span></div>") : ""}</div>
       ${t.notes ? QT.raw('<div style="margin-top:16px;color:#64738F">Notes: ' + esc(t.notes) + "</div>") : ""}
       <div style="margin-top:50px;display:flex;justify-content:space-between;color:#64738F"><div>Received by</div><div>Authorised signatory</div></div>
-      ${QT.docFoot()}</div>`;
+      ${QT.docFoot(QT.state.meta.settings.receipt_footer || "")}</div>`;
   }
 
   // ---------------------------------------------------------------- finance pages

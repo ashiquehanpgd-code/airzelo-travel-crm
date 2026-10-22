@@ -450,21 +450,27 @@
     window.addEventListener("afterprint", done);
     setTimeout(() => window.print(), 60);
   };
-  QT.docHead = function (title, metaHtml) {
-    const s = QT.state.meta.settings;
+  // biz: the company details frozen into an issued invoice / credit note; other documents use the current profile
+  QT.docHead = function (title, metaHtml, biz) {
+    const s = biz || QT.state.meta.settings;
+    const mark = s.logo_file ? '<div class="mk logo"><img src="' + esc(QT.logoUrl(s.logo_file)) + '" alt=""></div>' : '<div class="mk">' + icon("plane") + "</div>";
+    const legal = s.legal_name && s.legal_name !== s.business_name ? s.legal_name : "";
     return h`<div class="doc-head">
-      <div class="doc-brand"><div class="mk">${QT.raw(icon("plane"))}</div><div>
+      <div class="doc-brand">${QT.raw(mark)}<div>
         <div class="nm">${s.business_name || "Travel Agency"}</div>
+        ${legal ? QT.raw('<div class="tg">' + esc(legal) + "</div>") : ""}
         <div class="tg">${s.business_tagline || ""}</div>
-        <div class="tg" style="margin-top:4px;white-space:pre-line">${[s.business_address, s.business_phone, s.business_email].filter(Boolean).join("\n")}</div>
+        <div class="tg" style="margin-top:4px;white-space:pre-line">${[s.business_address, [s.business_state, s.business_country].filter(Boolean).join(", "), s.business_phone, s.business_email, s.business_website].filter(Boolean).join("\n")}</div>
         ${s.business_gstin ? QT.raw('<div class="tg">GSTIN: ' + esc(s.business_gstin) + "</div>") : ""}
+        ${s.business_registration ? QT.raw('<div class="tg" style="white-space:pre-line">' + esc(s.business_registration) + "</div>") : ""}
       </div></div>
       <div class="doc-title"><h2>${title}</h2>${QT.raw(metaHtml || "")}</div>
     </div>`;
   };
-  QT.docFoot = function () {
+  // footer: the agency's own text (receipt or invoice footer); the product credit stays separate from the agency's branding
+  QT.docFoot = function (text) {
     const s = QT.state.meta.settings;
-    return h`<div class="foot"><div>${s.invoice_footer || ""}</div><div>Generated ${QT.date(QT.today())} · AirZelo</div></div>`;
+    return h`<div class="foot"><div>${text !== undefined ? text : s.invoice_footer || ""}</div><div>Generated ${QT.date(QT.today())} · AirZelo</div></div>`;
   };
 
   // ---------------------------------------------------------------- misc

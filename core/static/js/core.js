@@ -121,7 +121,8 @@
     // build from integers to avoid float rounding in display
     const s = grouping(cur).format(major).split(".")[0] + "." + String(frac).padStart(2, "0");
     const sign = neg ? "-" : opts.plus && n > 0 ? "+" : "";
-    return sign + (opts.nosym ? "" : QT.symbol(cur)) + s;
+    const asCode = QT.state.meta && QT.state.meta.settings && QT.state.meta.settings.currency_display === "code";
+    return sign + (opts.nosym ? "" : asCode ? cur + " " : QT.symbol(cur)) + s;
   };
   QT.moneyCls = (minor) => (minor < 0 ? "neg" : "");
   QT.plain = function (minor) {
@@ -176,11 +177,31 @@
     return d.getFullYear() + "-" + z(d.getMonth() + 1) + "-" + z(d.getDate());
   };
   QT.today = () => QT.iso(new Date());
+  // dates follow the agency's Settings -> Documents & formats -> Date format
   QT.date = function (s) {
     if (!s) return "";
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
     if (!m) return s;
+    const f = (QT.state.meta && QT.state.meta.settings && QT.state.meta.settings.date_format) || "DD MMM YYYY";
+    if (f === "DD/MM/YYYY") return m[3] + "/" + m[2] + "/" + m[1];
+    if (f === "MM/DD/YYYY") return m[2] + "/" + m[3] + "/" + m[1];
+    if (f === "YYYY-MM-DD") return m[1] + "-" + m[2] + "-" + m[3];
     return parseInt(m[3], 10) + " " + MON[parseInt(m[2], 10) - 1] + " " + m[1];
+  };
+  QT.logoUrl = (file) => (file ? "/api/branding/logo?f=" + encodeURIComponent(file) : "");
+  // the agency's brand colour drives the accent colour of the app
+  QT.applyBranding = function () {
+    const s = (QT.state.meta && QT.state.meta.settings) || {};
+    const c = /^#[0-9A-Fa-f]{6}$/.test(s.brand_color || "") ? s.brand_color : "";
+    const root = document.documentElement.style;
+    if (c) {
+      root.setProperty("--royal", c);
+      root.setProperty("--royal-600", "color-mix(in srgb, " + c + " 82%, black)");
+      root.setProperty("--royal-50", "color-mix(in srgb, " + c + " 9%, white)");
+      root.setProperty("--royal-100", "color-mix(in srgb, " + c + " 18%, white)");
+    } else {
+      ["--royal", "--royal-600", "--royal-50", "--royal-100"].forEach((v) => root.removeProperty(v));
+    }
   };
   QT.dateShort = function (s) {
     if (!s) return "";
@@ -305,6 +326,7 @@
   };
   QT.loadMeta = async function () {
     QT.state.meta = await QT.get("/api/meta");
+    QT.applyBranding();
     return QT.state.meta;
   };
   QT.download = async function (path, fallbackName) {
