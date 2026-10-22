@@ -13,7 +13,21 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# standard-library packages the app never uses (unittest and lib-dynload are kept: CI runs the tests on this runtime,
+# and lib-dynload holds the compiled modules such as _sqlite3 and _ssl)
 TRIM = ("test", "idlelib", "tkinter", "turtledemo", "ensurepip", "lib2to3", "pydoc_data", "__phello__")
+# installer tooling the app never uses: pip (and its vendored packages) and the command-line launchers
+TRIM_SITE = ("pip", "pip-*.dist-info", "setuptools", "setuptools-*.dist-info", "_distutils_hack", "distutils-precedence.pth")
+TRIM_BIN = ("pip", "pip3", "pip3.*", "idle3", "idle3.*", "2to3", "2to3-*", "pydoc3", "pydoc3.*", "python3-config", "python3.*-config")
+
+
+def stdlib_dir(py):
+    """The standard-library folder: python/lib/python3.X on macOS, python/Lib on Windows. Checked by content, not by name,
+    because macOS disks are case-insensitive ("Lib" also matches the "lib" parent folder)."""
+    for cand in sorted((py / "lib").glob("python3.*")) + [py / "Lib"]:
+        if (cand / "os.py").is_file():
+            return cand
+    raise SystemExit("Standard library not found under %s" % py)
 
 
 def main(target):
@@ -41,10 +55,20 @@ def main(target):
     with tarfile.open(archive) as t:
         t.extractall(out, filter="data") if sys.version_info >= (3, 12) else t.extractall(out)  # noqa: S202 - verified archive
     py = out / "python"
-    lib = next((p for p in [py / "Lib", *sorted((py / "lib").glob("python3.*"))] if p.is_dir()), None)
+    lib = stdlib_dir(py)
     for name in TRIM:
-        for d in [lib / name] if lib else []:
-            shutil.rmtree(d, ignore_errors=True)
+        shutil.rmtree(lib / name, ignore_errors=True)
+    site = lib / "site-packages"
+    for pattern in TRIM_SITE:
+        for p in site.glob(pattern):
+            p.unlink() if p.is_file() else shutil.rmtree(p, ignore_errors=True)
+    bindir = py / ("Scripts" if (py / "Scripts").is_dir() else "bin")
+    for pattern in TRIM_BIN:
+        for p in bindir.glob(pattern):
+            if p.is_file() or p.is_symlink():
+                p.unlink()
+    for p in list(py.glob("Scripts")):  # Windows pip launchers live here
+        shutil.rmtree(p, ignore_errors=True)
     for p in [py / "include", py / "share", py / "tcl"]:
         shutil.rmtree(p, ignore_errors=True)
     for p in list(py.rglob("__pycache__")):

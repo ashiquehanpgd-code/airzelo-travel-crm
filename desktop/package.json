@@ -3,7 +3,7 @@
   "productName": "AirZelo",
   "version": "0.2.0",
   "description": "AirZelo - travel agency CRM and accounting for Windows and macOS",
-  "author": "Placeholder Publisher",
+  "author": "[LEGAL NAME PLACEHOLDER]",
   "license": "UNLICENSED",
   "private": true,
   "main": "main.js",
@@ -18,9 +18,9 @@
     "electron-builder": "26.17.0"
   },
   "build": {
-    "appId": "com.placeholder.travelagencycrm",
+    "appId": "com.airzelo.crm",
     "productName": "AirZelo",
-    "copyright": "Copyright © 2026 Placeholder Publisher",
+    "copyright": "Copyright © 2026 [LEGAL NAME PLACEHOLDER]",
     "directories": { "output": "../dist", "buildResources": "resources" },
     "files": ["main.js", "preload.js", "launcher/**", "package.json"],
     "extraResources": [
@@ -41,6 +41,7 @@
       "artifactName": "${productName}-${version}-win-${arch}-setup.${ext}"
     },
     "nsis": {
+      "guid": "edbf4f81-513b-471e-8899-465f7e581c3f",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,

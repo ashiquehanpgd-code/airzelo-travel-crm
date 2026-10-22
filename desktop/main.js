@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const PRODUCT = 'AirZelo'; // placeholder product name
+const PRODUCT = 'AirZelo'; // product name (also the data folder name: keep stable)
 const isWin = process.platform === 'win32';
 
 // TACRM_USER_DATA: separate data folder for automated tests (never set for customers)

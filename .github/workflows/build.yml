@@ -33,8 +33,14 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "22", cache: npm, cache-dependency-path: desktop/package-lock.json }
 
-      - name: Fetch pinned Python runtime (sha256-verified)
+      - name: Release identity (app ID, NSIS GUID, product name must not change)
+        run: python build/check_release_config.py
+
+      - name: Fetch pinned Python runtime (sha256-verified, trimmed)
         run: python build/fetch_python.py ${{ matrix.runtime }}
+
+      - name: Runtime check (core imports, compiled modules, pip/IDLE/tkinter removed)
+        run: python build/check_runtime.py build/runtime/${{ matrix.runtime }}/python
 
       - name: Build macOS ticket reader (universal)
         if: runner.os == 'macOS'
@@ -64,6 +70,10 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npx electron-builder ${{ matrix.dist }} --publish never
+
+      - name: Runtime check inside the packaged app
+        shell: bash
+        run: python build/check_runtime.py --app "${{ matrix.app }}"
 
       - name: Smoke-test the packaged app with its own runtime
         shell: bash
