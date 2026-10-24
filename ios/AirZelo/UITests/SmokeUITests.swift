@@ -5,11 +5,7 @@ import XCTest
 final class SmokeUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
-    /// Waits for the element; scrolls only when it exists but is off screen (lazy forms create rows as they scroll in).
-    func reveal(_ el: XCUIElement, in app: XCUIApplication) {
-        if el.waitForExistence(timeout: 3) && el.isHittable { return }
-        for _ in 0..<8 where !(el.exists && el.isHittable) { app.swipeUp() }
-    }
+    var dumped = Set<String>()
 
     /// On failure: the full accessibility tree in the log and a screenshot in the result bundle.
     func diagnose(_ what: String, _ app: XCUIApplication) {
@@ -20,16 +16,43 @@ final class SmokeUITests: XCTestCase {
         print("---- UI hierarchy (\(what)) ----\n\(app.debugDescription)")
     }
 
+    /// Finds an element in a lazy form: rows exist only near the screen, so look in both directions,
+    /// a little at a time, instead of flinging to the end (which releases the rows we passed).
+    func reveal(_ el: XCUIElement, in app: XCUIApplication, _ what: String) -> Bool {
+        if el.waitForExistence(timeout: 3) && el.isHittable { return true }
+        if !dumped.contains(what) { dumped.insert(what); diagnose("\(what) not visible yet", app) }
+        let scroller = app.collectionViews.firstMatch.exists ? app.collectionViews.firstMatch : app.scrollViews.firstMatch
+        for direction in ["up", "down"] {
+            for _ in 0..<8 {
+                if el.exists && el.isHittable { return true }
+                let from = scroller.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: direction == "up" ? 0.7 : 0.3))
+                let to = scroller.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: direction == "up" ? 0.4 : 0.6))
+                from.press(forDuration: 0.05, thenDragTo: to)
+            }
+        }
+        return el.exists && el.isHittable
+    }
+
+    /// Like a user: put away the keyboard before moving on to the next field.
+    func dismissKeyboard(_ app: XCUIApplication) {
+        guard app.keyboards.firstMatch.exists else { return }
+        for key in ["return", "Return", "done", "Done"] where app.keyboards.buttons[key].exists {
+            app.keyboards.buttons[key].tap()
+            return
+        }
+        app.navigationBars.firstMatch.tap()  // decimal pad has no return key
+    }
+
     func type(_ id: String, _ text: String, in app: XCUIApplication) {
         let f = app.textFields[id]
-        reveal(f, in: app)
-        guard f.exists else {
+        guard reveal(f, in: app, "field \(id)") else {
             diagnose("missing field \(id)", app)
             XCTFail("field \(id) not found")
             return
         }
         f.tap()
         f.typeText(text)
+        dismissKeyboard(app)
     }
 
     func testBookingAndPaymentOffline() {
@@ -55,7 +78,7 @@ final class SmokeUITests: XCTestCase {
         XCTAssertEqual(badge.label, "Unpaid")
 
         let pay = app.buttons["record-payment"]
-        reveal(pay, in: app)
+        XCTAssertTrue(reveal(pay, in: app, "record payment"), "Record customer payment button")
         pay.tap()
         let amount = app.textFields["txn-amount"]
         XCTAssertTrue(amount.waitForExistence(timeout: 5))
