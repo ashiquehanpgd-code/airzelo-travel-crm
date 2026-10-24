@@ -1,0 +1,90 @@
+# iPhone app: build and test the offline engine against the desktop core, then build and test the app
+# on an iPhone simulator. Nothing here signs, uploads or publishes anything.
+name: ios
+
+on:
+  push:
+    branches: [main, "feature/ios-offline-app"]
+    paths: ["ios/**", "core/server/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["ios/**", "core/server/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: engine checks (desktop parity, backups, security, scale)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
+
+      - name: iPhone schema is the desktop schema
+        run: python ios/tools/export_schema.py --check
+
+      - name: Desktop parity fixtures (3 seeds x 600 operations)
+        run: |
+          for s in 7 42 99; do python ios/tools/parity.py --out "$RUNNER_TEMP/parity-$s" --seed $s --ops 600; done
+
+      - name: Build checks
+        working-directory: ios/AirZeloKit
+        run: swift build -c release
+
+      - name: All checks (seed 7, 20 000-booking scale test)
+        working-directory: ios/AirZeloKit
+        run: .build/release/AirZeloChecks --parity "$RUNNER_TEMP/parity-7" --scale 20000
+
+      - name: Parity, more seeds
+        working-directory: ios/AirZeloKit
+        run: |
+          for s in 42 99; do .build/release/AirZeloChecks --parity "$RUNNER_TEMP/parity-$s" --only parity; done
+
+      - name: Desktop restores the iPhone export and reproduces every figure
+        run: python ios/tools/parity.py --check-export "$RUNNER_TEMP/parity-7"
+
+  simulator:
+    name: app build + tests on iPhone simulator
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
+
+      - name: Desktop parity fixture
+        run: python ios/tools/parity.py --out "$RUNNER_TEMP/parity" --seed 7 --ops 400
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec ios/AirZelo/project.yml
+
+      - name: Pick an iPhone simulator
+        id: sim
+        run: |
+          xcodebuild -version
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          d = json.load(sys.stdin)["devices"]
+          best = sorted(((rt, x) for rt, xs in d.items() if "iOS" in rt for x in xs if x["name"].startswith("iPhone")), key=lambda p: p[0])
+          print(best[-1][1]["udid"])')
+          xcrun simctl list devices | grep "$udid"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Unit + engine checks + UI smoke test on the simulator
+        run: |
+          set -o pipefail
+          xcodebuild test -project ios/AirZelo/AirZelo.xcodeproj -scheme AirZelo \
+            -destination "id=${{ steps.sim.outputs.udid }}" CODE_SIGNING_ALLOWED=NO \
+            TEST_RUNNER_AZ_PARITY_DIR="$RUNNER_TEMP/parity" | tee "$RUNNER_TEMP/test.log" | grep -E "PASS|FAIL|SKIP|checks passed|error:|Test Case|Executed" || true
+          grep -q "TEST SUCCEEDED" "$RUNNER_TEMP/test.log"
+
+      - name: Release build for iPhone (device, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build -project ios/AirZelo/AirZelo.xcodeproj -scheme AirZelo -configuration Release \
+            -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO | tail -5

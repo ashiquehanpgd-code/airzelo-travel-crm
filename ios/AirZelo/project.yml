@@ -1,0 +1,88 @@
+# XcodeGen spec for the AirZelo iPhone app. Generate the Xcode project with:
+#   brew install xcodegen && xcodegen generate --spec ios/AirZelo/project.yml
+# (AirZelo.xcodeproj is generated, not committed.)
+name: AirZelo
+options:
+  bundleIdPrefix: com.airzelo
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  AirZeloKit:
+    path: ../AirZeloKit
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.3.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  AirZelo:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    dependencies:
+      - package: AirZeloKit
+        product: AirZeloKit
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: AirZelo
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSFaceIDUsageDescription: AirZelo uses Face ID to unlock your agency's books on this iPhone.
+        # standard OS encryption only (data at rest, backups); confirm export-compliance answers before App Store upload
+        ITSAppUsesNonExemptEncryption: false
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.airzelo.backup
+            UTTypeDescription: AirZelo backup
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [azbackup]
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: AirZelo backup
+            LSItemContentTypes: [com.airzelo.backup]
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.airzelo.crm.ios
+        TARGETED_DEVICE_FAMILY: "1"
+        ENABLE_PREVIEWS: YES
+  AirZeloTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+    dependencies:
+      - target: AirZelo
+      - package: AirZeloKit
+        product: AirZeloCheckSuite
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+  AirZeloUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    dependencies:
+      - target: AirZelo
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  AirZelo:
+    build:
+      targets:
+        AirZelo: all
+    test:
+      gatherCoverageData: false
+      targets:
+        - AirZeloTests
+        - AirZeloUITests

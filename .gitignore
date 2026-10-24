@@ -45,3 +45,4 @@ ios/AirZeloKit/.build/
 ios/AirZeloKit/.swiftpm/
 ios/AirZelo/AirZelo.xcodeproj/
 ios/build/
+ios/AirZelo/Generated/
