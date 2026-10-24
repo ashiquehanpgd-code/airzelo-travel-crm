@@ -23,12 +23,12 @@ final class SmokeUITests: XCTestCase {
         app.launch()
 
         app.tabBars.buttons["Bookings"].tap()
-        app.buttons["new-booking"].tap()
+        app.navigationBars.buttons["New booking"].tap()
         type("new-customer-name", "UI Test Customer", in: app)
         type("pnr", "UIT001", in: app)
         type("selling-price", "12500", in: app)
         type("pax-name", "UI Test Passenger", in: app)
-        app.buttons["save-booking"].tap()
+        app.buttons["Save booking"].tap()
 
         let row = app.staticTexts["UI Test Customer"]
         XCTAssertTrue(row.waitForExistence(timeout: 10), "booking listed")
@@ -43,7 +43,7 @@ final class SmokeUITests: XCTestCase {
         let amount = app.textFields["txn-amount"]
         XCTAssertTrue(amount.waitForExistence(timeout: 5))
         XCTAssertEqual(amount.value as? String, "12500.00", "outstanding amount is suggested")
-        app.buttons["save-transaction"].tap()
+        app.buttons["Save entry"].tap()
         for _ in 0..<10 where !(badge.exists && badge.isHittable) { app.swipeDown() }
         let paid = NSPredicate(format: "label == 'Paid'")
         expectation(for: paid, evaluatedWith: badge)

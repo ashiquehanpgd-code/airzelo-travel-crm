@@ -192,6 +192,10 @@ public final class AgencyStore {
     @discardableResult
     public func autoBackupIfDue() throws -> BackupInfo? {
         let a = try open()
+        // a backup interrupted earlier (app killed while writing) leaves only a .part file; it is never a usable backup
+        for n in (try? FileManager.default.contentsOfDirectory(atPath: backupDir.path)) ?? [] where n.hasSuffix(".part") {
+            try? FileManager.default.removeItem(at: backupDir.appendingPathComponent(n))
+        }
         let hours = Int(try a.setting("auto_backup_hours", "24") ?? "24") ?? 24
         if hours <= 0 { return nil }
         if let last = listBackups().first(where: { $0.kind == "auto" }), Dates.now().timeIntervalSince(last.created) < Double(hours) * 3600 { return nil }

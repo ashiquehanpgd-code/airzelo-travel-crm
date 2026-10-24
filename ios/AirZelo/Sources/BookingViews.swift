@@ -24,7 +24,7 @@ struct BookingListView: View {
         }
         .searchable(text: $query, prompt: "PNR, name, ticket no., phone")
         .navigationTitle("Bookings")
-        .toolbar { Button { creating = true } label: { Image(systemName: "plus") }.accessibilityIdentifier("new-booking") }
+        .toolbar { Button("New booking", systemImage: "plus") { creating = true }.accessibilityIdentifier("new-booking") }
         .sheet(isPresented: $creating) { NavigationStack { BookingFormView(bookingId: nil) } }
         .task(id: "\(model.revision)|\(query)|\(status)") { load() }
     }
@@ -115,7 +115,7 @@ struct BookingDetailView: View {
                         VStack(alignment: .leading) {
                             Text([p["title"]!.text, p["name"]!.text].filter { !$0.isEmpty }.joined(separator: " ")).bold()
                             Text([PAX_LABEL[p["pax_type"]!.text] ?? "", p["ticket_number"]!.text.isEmpty ? "No ticket no." : "Ticket " + p["ticket_number"]!.text,
-                                  p["passport_no"]!.text.isEmpty ? "" : "Passport " + p["passport_no"]!.text].filter { !$0.isEmpty }.joined(separator: " · "))
+                                  p["passport_no"]!.text.isEmpty ? "" : "Passport " + FieldCrypto.display(p["passport_no"]!.text)].filter { !$0.isEmpty }.joined(separator: " · "))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -235,11 +235,14 @@ let PAX_LABEL = ["ADT": "Adult", "CHD": "Child", "INF": "Infant"]
 
 // MARK: - form
 
-struct PaxDraft: Identifiable { let id = UUID(); var title = "", name = "", type = "ADT", ticket = "", passport = "" }
+struct PaxDraft: Identifiable { let id = UUID(); var title = "", name = "", type = "ADT", ticket = "", passport = "", notes = "" }
 struct SegDraft: Identifiable {
     let id = UUID()
     var direction = "outbound", airline = "", flightNo = "", origin = "", destination = "", airlinePnr = "", baggage = ""
     var dep = Date(), arr = Date(), hasDep = false, hasArr = false
+    var cabin = ""
+    /// A stored date without a time (e.g. from the desktop) is kept as it is unless the user sets a time.
+    var depRaw: String?, arrRaw: String?
 }
 
 struct BookingFormView: View {
@@ -274,6 +277,8 @@ struct BookingFormView: View {
     @State private var segs: [SegDraft] = []
     @State private var errors = ErrorState()
     @State private var loaded = false
+    /// The booking as stored (every field); edits are applied on top, so nothing the form does not show is lost.
+    @State private var original: Fields = [:]
 
     var base: String { model.agency?.baseCurrency ?? "INR" }
 
@@ -327,7 +332,11 @@ struct BookingFormView: View {
                         }
                         Picker("Type", selection: $p.type) { Text("Adult").tag("ADT"); Text("Child").tag("CHD"); Text("Infant").tag("INF") }
                         TextField("E-ticket number", text: $p.ticket).capitals()
-                        TextField("Passport number (encrypted)", text: $p.passport).capitals()
+                        if FieldCrypto.isSealed(p.passport) {
+                            Text("Passport: encrypted on another device (kept as is)").font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            TextField("Passport number (encrypted)", text: $p.passport).capitals()
+                        }
                     }
                 }
                 .onDelete { pax.remove(atOffsets: $0) }
@@ -354,7 +363,7 @@ struct BookingFormView: View {
         .navigationTitle(bookingId == nil ? "New booking" : "Edit booking")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.accessibilityIdentifier("save-booking") }
+            ToolbarItem(placement: .confirmationAction) { Button("Save booking") { save() }.accessibilityIdentifier("save-booking") }
         }
         .errorAlert($errors)
         .task { if !loaded { load(); loaded = true } }
@@ -367,7 +376,8 @@ struct BookingFormView: View {
         currencies = ((try? a.db.query("SELECT code FROM currencies WHERE active = 1 ORDER BY CASE code WHEN 'INR' THEN 0 WHEN 'SAR' THEN 1 ELSE 2 END, code")) ?? [])
         taxProfiles = ((try? a.db.query("SELECT id, name FROM tax_profiles WHERE active = 1 AND basis <> 'none' ORDER BY id")) ?? [])
         currency = base
-        guard let bid = bookingId, let d = try? a.getBooking(bid) else { return }
+        guard let bid = bookingId, let d = try? a.getBooking(bid), let o = try? a.bookingEditFields(bid) else { return }
+        original = o
         let r = d.booking.row
         customerId = r.int("customer_id"); supplierId = r.optInt("supplier_id") ?? 0
         status = r.str("status"); serviceType = r.str("service_type"); tripType = r.str("trip_type")
@@ -378,35 +388,41 @@ struct BookingFormView: View {
         taxProfileId = r.optInt("tax_profile_id") ?? 0
         notes = r.str("notes")
         pax = d.passengers.map { p in PaxDraft(title: p["title"]!.text, name: p["name"]!.text, type: p["pax_type"]!.text,
-                                               ticket: p["ticket_number"]!.text, passport: p["passport_no"]!.text) }
+                                               ticket: p["ticket_number"]!.text, passport: p["passport_no"]!.text, notes: p["notes"]?.text ?? "") }
         segs = d.segments.map { s in
             var x = SegDraft(direction: s.str("direction"), airline: s.str("airline"), flightNo: s.str("flight_no"), origin: s.str("origin"),
                              destination: s.str("destination"), airlinePnr: s.str("airline_pnr"), baggage: s.str("baggage"))
-            if let d = Fmt.isoTime.date(from: s.str("dep_at")) { x.dep = d; x.hasDep = true }
-            if let d = Fmt.isoTime.date(from: s.str("arr_at")) { x.arr = d; x.hasArr = true }
+            x.cabin = s.str("cabin")
+            if let d = Fmt.isoTime.date(from: s.str("dep_at")) { x.dep = d; x.hasDep = true } else if !s.str("dep_at").isEmpty { x.depRaw = s.str("dep_at") }
+            if let d = Fmt.isoTime.date(from: s.str("arr_at")) { x.arr = d; x.hasArr = true } else if !s.str("arr_at").isEmpty { x.arrRaw = s.str("arr_at") }
             return x
         }
     }
 
     var fields: Fields {
-        var f: Fields = ["status": .string(status), "service_type": .string(serviceType), "trip_type": .string(tripType),
+        var f = original
+        for (k, v) in ["status": .string(status), "service_type": .string(serviceType), "trip_type": .string(tripType),
                          "booking_date": .string(bookingDate), "travel_date": .string(travelDate), "pnr": .string(pnr),
                          "currency": .string(currency), "exchange_rate": .string(rate), "purchase_cost": .string(purchase),
                          "selling_price": .string(selling), "commission": .string(commission), "service_charge": .string(service),
                          "other_income": .string(other), "notes": .string(notes),
                          "supplier_id": supplierId == 0 ? .null : .int(supplierId),
-                         "tax_profile_id": taxProfileId == 0 ? .null : .int(taxProfileId)]
+                         "tax_profile_id": taxProfileId == 0 ? .null : .int(taxProfileId)] as Fields { f[k] = v }
         if customerId == 0 {
+            f.removeValue(forKey: "customer_id")
             f["new_customer"] = ["name": .string(newCustomerName), "phone": .string(newCustomerPhone)]
         } else {
+            f.removeValue(forKey: "new_customer")
             f["customer_id"] = .int(customerId)
         }
         f["passengers"] = .array(pax.map { p in ["title": .string(p.title), "name": .string(p.name), "pax_type": .string(p.type),
-                                                 "ticket_number": .string(p.ticket), "passport_no": .string(p.passport)] })
+                                                 "ticket_number": .string(p.ticket), "passport_no": .string(p.passport), "notes": .string(p.notes)] })
         f["segments"] = .array(segs.map { s in
             ["direction": .string(s.direction), "airline": .string(s.airline), "flight_no": .string(s.flightNo), "origin": .string(s.origin),
              "destination": .string(s.destination), "airline_pnr": .string(s.airlinePnr), "baggage": .string(s.baggage),
-             "dep_at": s.hasDep ? .string(Fmt.isoTime.string(from: s.dep)) : .null, "arr_at": s.hasArr ? .string(Fmt.isoTime.string(from: s.arr)) : .null]
+             "cabin": .string(s.cabin),
+             "dep_at": s.hasDep ? .string(Fmt.isoTime.string(from: s.dep)) : J(s.depRaw),
+             "arr_at": s.hasArr ? .string(Fmt.isoTime.string(from: s.arr)) : J(s.arrRaw)]
         })
         return f
     }

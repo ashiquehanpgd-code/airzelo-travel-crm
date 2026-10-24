@@ -34,12 +34,18 @@ public final class FieldCrypto {
         guard let raw = Data(base64Encoded: String(stored.dropFirst(FieldCrypto.prefix.count))),
               let box = try? AES.GCM.SealedBox(combined: raw),
               let plain = try? AES.GCM.open(box, using: key, authenticating: Data(column.utf8)) else {
-            return "(encrypted - not readable on this device)"
+            return stored  // sealed with another device's key: kept as is, so saving or exporting never loses it
         }
         return String(decoding: plain, as: UTF8.self)
     }
 
     public static func isSealed(_ s: String?) -> Bool { s?.hasPrefix(prefix) ?? false }
+
+    /// Text for screens: the number, or a note when it was encrypted on another device and cannot be read here.
+    public static func display(_ s: String?) -> String {
+        guard let s else { return "" }
+        return isSealed(s) ? "Encrypted on another device" : s
+    }
 }
 
 /// A 256-bit key kept in the Keychain. It is readable only while the device is unlocked, is never synced

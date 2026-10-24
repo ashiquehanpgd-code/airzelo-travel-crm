@@ -204,7 +204,7 @@ struct TransactionFormView: View {
         .navigationTitle(KIND_LABELS[kind] ?? "Entry")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.accessibilityIdentifier("save-transaction") }
+            ToolbarItem(placement: .confirmationAction) { Button("Save entry") { save() }.accessibilityIdentifier("save-transaction") }
         }
         .errorAlert($errors)
         .task {

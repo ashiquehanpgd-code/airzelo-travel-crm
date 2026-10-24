@@ -7,7 +7,67 @@ enum ServiceChecks {
         ("accounting: worked example (GST, SAR, refund)", workedExample),
         ("accounting: posted money cannot be edited", immutability),
         ("accounting: repeated submissions post once", idempotency),
+        ("editing: re-saving every desktop booking changes nothing", editRoundTrip),
+        ("editing: passport sealed on another device is kept", foreignSealedPassport),
     ]
+
+    /// Every booking of the desktop parity data is re-saved from its edit payload (what the edit screen starts from):
+    /// nothing may be refused, no stored field may change and no figure may move.
+    static func editRoundTrip(_ o: CheckOptions, _ log: CheckLog) throws {
+        let fx = try ParityChecks.load(o)
+        pinClock(fx.today)
+        defer { unpinClock() }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("az-edit-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("agency.db")
+        try FileManager.default.copyItem(at: fx.dbURL, to: url)
+        let a = try Agency(url: url, crypto: .ephemeral(), protect: false)
+        defer { a.close() }
+        func state() throws -> JSONValue {
+            var b = try a.db.query("SELECT * FROM bookings ORDER BY id").map { r -> JSONValue in
+                var o = r.json; o.removeValue(forKey: "updated_at"); return .object(o)
+            }
+            b += try a.db.query("SELECT booking_id, seq, title, name, pax_type, ticket_number, passport_no, notes FROM booking_passengers ORDER BY booking_id, seq").map { r in
+                var o = r.json; o["passport_no"] = J(a.crypto.open(r.optStr("passport_no"), column: "passport_no")); return .object(o)
+            }
+            b += try a.db.query("SELECT booking_id, seq, direction, airline, flight_no, origin, destination, dep_at, arr_at, cabin, baggage, airline_pnr FROM booking_segments ORDER BY booking_id, seq").map { .object($0.json) }
+            return .array(b)
+        }
+        let before = try state()
+        let calcBefore = try Ledger(a).bookingList.map { $0.calc.json }
+        let ids = try a.db.query("SELECT id FROM bookings ORDER BY id").map { $0.int("id") }
+        var refused: [String] = []
+        for id in ids {
+            var f = try a.bookingEditFields(id)
+            f["force_duplicate"] = true  // the scenario deliberately has duplicate PNRs
+            do { try a.saveBooking(f, id: id) } catch let e as AZError { refused.append("booking \(id): \(e.message)") }
+        }
+        try expect(refused.isEmpty, "\(refused.count) re-saves refused:\n" + refused.prefix(10).joined(separator: "\n"))
+        let diffs = ParityChecks.diff(try state(), before)
+        try expect(diffs.isEmpty, "\(diffs.count) stored values changed:\n" + diffs.prefix(15).joined(separator: "\n"))
+        try expect(try Ledger(a).bookingList.map { $0.calc.json } == calcBefore, "figures moved after re-saving")
+        let manual = try a.db.scalarInt("SELECT COUNT(*) FROM bookings WHERE tax_override = 1")
+        let invoiced = try a.db.scalarInt("SELECT COUNT(DISTINCT booking_id) FROM invoices WHERE status = 'issued' AND doc_type = 'invoice'")
+        log.note("\(ids.count) bookings re-saved unchanged (\(manual) with manual tax, \(invoiced) with an issued invoice)")
+    }
+
+    static func foreignSealedPassport(_ o: CheckOptions, _ log: CheckLog) throws {
+        let t = try TempAgency()
+        let a = t.agency
+        let other = FieldCrypto.ephemeral()
+        let foreign = try other.seal("X7654321", column: "passport_no")!
+        let cid = try a.createCustomer(["name": "Moved Customer"])
+        try a.db.run("UPDATE customers SET passport_no = ? WHERE id = ?", [foreign, cid])
+        let b = try a.saveBooking(["customer_id": .int(cid), "status": "confirmed", "passengers": [["name": "Moved Pax"]]])
+        try a.db.run("UPDATE booking_passengers SET passport_no = ? WHERE booking_id = ?", [foreign, b])
+        try expectEqual(FieldCrypto.display(try a.getCustomer(cid).customer["passport_no"]?.stringValue), "Encrypted on another device")
+        try a.updateCustomer(cid, ["city": "Kochi"])
+        try a.saveBooking(try a.bookingEditFields(b), id: b)
+        try expectEqual(try a.db.one("SELECT passport_no FROM customers WHERE id = ?", [cid])!.str("passport_no"), foreign, "customer value kept")
+        try expectEqual(try a.db.one("SELECT passport_no FROM booking_passengers WHERE booking_id = ?", [b])!.str("passport_no"), foreign, "passenger value kept")
+        try expectEqual(other.open(foreign, column: "passport_no"), "X7654321", "still readable with its own key")
+    }
 
     /// Sets up an agency with two accounts, a customer and a supplier.
     static func basics(_ a: Agency) throws -> (cash: Int, bank: Int, sar: Int, cust: Int, sup: Int) {

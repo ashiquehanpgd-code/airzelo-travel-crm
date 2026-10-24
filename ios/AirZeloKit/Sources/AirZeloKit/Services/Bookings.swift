@@ -41,7 +41,7 @@ extension Agency {
             }
             out.append(Pax(seq: out.count, title: try V.s(p, "title", 10), name: name, paxType: ptype,
                            ticket: try normTicket(p.get("ticket_number")),
-                           passport: V.normCode(J(try V.s(p, "passport_no", 20)), 20), notes: try V.s(p, "notes", 500)))
+                           passport: try passportValue(p), notes: try V.s(p, "notes", 500)))
         }
         if out.isEmpty { throw AZError.validation("Add at least one passenger", "passengers") }
         let tickets = out.compactMap { $0.ticket }
@@ -261,6 +261,38 @@ extension Agency {
             }
             return id
         }
+    }
+
+    /// The complete save payload of an existing booking: every field saveBooking accepts, as stored. An edit screen
+    /// starts from this and changes only what the user edits, so fields it does not show (cabin, place of supply,
+    /// manual tax, passenger notes ...) are kept and the prices are re-sent exactly.
+    public func bookingEditFields(_ bid: Int) throws -> Fields {
+        guard let b = try db.one("SELECT * FROM bookings WHERE id = ?", [bid]) else { throw AZError.notFound("Booking not found") }
+        func money(_ k: String) -> JSONValue { .string(fmt(b.int(k))) }
+        var f: Fields = ["customer_id": .int(b.int("customer_id")), "supplier_id": b["supplier_id"].json, "pnr": b["pnr"].json,
+                         "status": .string(b.str("status")), "service_type": .string(b.str("service_type")), "trip_type": .string(b.str("trip_type")),
+                         "booking_date": .string(b.str("booking_date")), "travel_date": b["travel_date"].json, "return_date": b["return_date"].json,
+                         "cabin": b["cabin"].json, "baggage": b["baggage"].json, "notes": b["notes"].json, "currency": .string(b.str("currency")),
+                         "exchange_rate": .string(b.str("exchange_rate")), "rate_date": b["rate_date"].json, "place_of_supply": b["place_of_supply"].json,
+                         "purchase_cost": money("purchase_cost"), "selling_price": money("selling_price"), "commission": money("commission"),
+                         "service_charge": money("service_charge"), "other_income": money("other_income"),
+                         "tax_profile_id": b["tax_profile_id"].json, "taxable_value": money("taxable_value")]
+        if b.bool("tax_override") {
+            f["tax_override"] = true
+            f["tax_rate"] = .string(b.str("tax_rate"))
+            f["tax_amount"] = money("tax_amount")
+            f["tax_split"] = .string(b.str("tax_split"))
+        }
+        f["passengers"] = .array(try db.query("SELECT * FROM booking_passengers WHERE booking_id = ? ORDER BY seq, id", [bid]).map { p in
+            ["title": p["title"].json, "name": .string(p.str("name")), "pax_type": .string(p.str("pax_type")), "ticket_number": p["ticket_number"].json,
+             "passport_no": J(crypto.open(p.optStr("passport_no"), column: "passport_no")), "notes": p["notes"].json]
+        })
+        f["segments"] = .array(try db.query("SELECT * FROM booking_segments WHERE booking_id = ? ORDER BY seq, id", [bid]).map { s in
+            var o: Fields = [:]
+            for k in ["direction", "airline", "flight_no", "origin", "destination", "dep_at", "arr_at", "cabin", "baggage", "airline_pnr"] { o[k] = s[k].json }
+            return .object(o)
+        })
+        return f
     }
 
     @discardableResult

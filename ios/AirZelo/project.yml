@@ -49,11 +49,20 @@ targets:
             LSItemContentTypes: [com.airzelo.backup]
             CFBundleTypeRole: Viewer
             LSHandlerRank: Owner
+    entitlements:
+      path: Generated/AirZelo.entitlements
+      properties:
+        # the app's own Keychain group: holds the device key for field encryption and device backups
+        keychain-access-groups: ["$(AppIdentifierPrefix)com.airzelo.crm.ios"]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.airzelo.crm.ios
         TARGETED_DEVICE_FAMILY: "1"
         ENABLE_PREVIEWS: YES
+        # simulator builds are signed to run locally (no Apple account needed), so the Keychain works there;
+        # device builds need your team: set DEVELOPMENT_TEAM (see ios/README.md)
+        "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
+        "CODE_SIGN_STYLE[sdk=iphonesimulator*]": Manual
   AirZeloTests:
     type: bundle.unit-test
     platform: iOS

@@ -24,11 +24,17 @@ extension Agency {
             "city": try V.s(data, "city", 80),
             "state": try V.s(data, "state", 80),
             "gstin": V.normCode(J(try V.s(data, "gstin", 15)), 15),
-            "passport_no": V.normCode(J(try V.s(data, "passport_no", 20)), 20),
+            "passport_no": try passportValue(data),
             "notes": try V.s(data, "notes", 4000),
             "follow_up_date": try V.d(data, "follow_up_date"),
             "follow_up_note": try V.s(data, "follow_up_note", 500),
         ]
+    }
+
+    /// Passport number from a payload. A value still sealed (encrypted on another device) is kept exactly as stored.
+    func passportValue(_ data: Fields) throws -> String? {
+        if let s = data.get("passport_no").stringValue, FieldCrypto.isSealed(s) { return s }
+        return V.normCode(J(try V.s(data, "passport_no", 20)), 20)
     }
 
     /// The payload as stored: the passport number sealed with the device key.

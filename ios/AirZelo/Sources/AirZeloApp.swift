@@ -78,12 +78,28 @@ final class AppModel: ObservableObject {
 
     func changed() { revision += 1 }
 
+    /// The automatic backup asks iOS for background time, so it is not cut off half way (a cut-off backup is only
+    /// ever a .part file: the finished backups are untouched).
+    func backupInBackground() {
+        #if os(iOS)
+        var task = UIBackgroundTaskIdentifier.invalid
+        task = UIApplication.shared.beginBackgroundTask(withName: "AirZelo backup") {
+            UIApplication.shared.endBackgroundTask(task)
+            task = .invalid
+        }
+        _ = try? store?.autoBackupIfDue()
+        if task != .invalid { UIApplication.shared.endBackgroundTask(task) }
+        #else
+        _ = try? store?.autoBackupIfDue()
+        #endif
+    }
+
     func phaseChanged(_ p: ScenePhase) {
         switch p {
         case .background:
             if !uiTesting { locked = true }
             hidden = true
-            _ = try? store?.autoBackupIfDue()
+            backupInBackground()
         case .inactive:
             hidden = true
         case .active:

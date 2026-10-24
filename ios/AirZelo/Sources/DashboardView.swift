@@ -25,6 +25,11 @@ struct DashboardView: View {
             Picker("Period", selection: $period) {
                 Text("Today").tag("today"); Text("Month").tag("month"); Text("FY").tag("fy"); Text("Year").tag("year")
             }.pickerStyle(.segmented)
+            if model.passcodeMissing {
+                Label("This iPhone has no passcode, so iOS cannot encrypt your books and anyone holding the phone can open them. "
+                      + "Set a passcode in Settings > Face ID & Passcode.", systemImage: "exclamationmark.shield")
+                    .font(.footnote).foregroundStyle(.orange)
+            }
             if let d = dash {
                 Section("Profit") {
                     HStack { Text("Bookings").foregroundStyle(.secondary); Spacer(); Text("\(d.summary.bookings)").monospacedDigit() }

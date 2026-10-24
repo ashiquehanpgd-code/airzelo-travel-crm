@@ -46,7 +46,7 @@ struct CustomerDetailView: View {
                 Section {
                     Text(c["name"]!.text).font(.headline)
                     ForEach(["phone", "alt_phone", "email", "city", "gstin", "passport_no"], id: \.self) { k in
-                        if !(c[k]?.text ?? "").isEmpty { LabeledContent(Fmt.label(k == "passport_no" ? "passport" : k), value: c[k]!.text) }
+                        if !(c[k]?.text ?? "").isEmpty { LabeledContent(Fmt.label(k == "passport_no" ? "passport" : k), value: FieldCrypto.display(c[k]!.text)) }
                     }
                     if !(c["follow_up_date"]?.text ?? "").isEmpty {
                         LabeledContent("Follow up", value: "\(Fmt.display(c["follow_up_date"]!.text)) \(c["follow_up_note"]!.text)")
@@ -138,7 +138,11 @@ struct CustomerFormView: View {
             }
             Section(footer: Text("Passport numbers are encrypted on this iPhone.")) {
                 TextField("GSTIN", text: bind("gstin")).capitals()
-                TextField("Passport number", text: bind("passport_no")).capitals()
+                if FieldCrypto.isSealed(f["passport_no"]) {
+                    Text("Passport: encrypted on another device (kept as is)").foregroundStyle(.secondary)
+                } else {
+                    TextField("Passport number", text: bind("passport_no")).capitals()
+                }
             }
             Section("Follow-up") {
                 OptionalDateField(label: "Follow-up date", iso: bind("follow_up_date"))

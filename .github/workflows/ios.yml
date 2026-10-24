@@ -70,8 +70,13 @@ jobs:
           udid=$(xcrun simctl list devices available -j | python3 -c '
           import json, sys
           d = json.load(sys.stdin)["devices"]
-          best = sorted(((rt, x) for rt, xs in d.items() if "iOS" in rt for x in xs if x["name"].startswith("iPhone")), key=lambda p: p[0])
-          print(best[-1][1]["udid"])')
+          import re
+          def rank(rt, x):  # newest iOS, then the newest standard iPhone model (not SE / Plus / Pro Max)
+              v = tuple(int(n) for n in re.findall(r"\d+", rt.split("iOS")[-1]))
+              m = re.match(r"iPhone (\d+)( Pro)?$", x["name"])
+              return (v, 1 if m else 0, int(m.group(1)) if m else 0)
+          best = max(((rank(rt, x), x) for rt, xs in d.items() if "iOS" in rt for x in xs if x["name"].startswith("iPhone")), key=lambda p: p[0])
+          print(best[1]["udid"])')
           xcrun simctl list devices | grep "$udid"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
 
@@ -79,9 +84,22 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test -project ios/AirZelo/AirZelo.xcodeproj -scheme AirZelo \
-            -destination "id=${{ steps.sim.outputs.udid }}" CODE_SIGNING_ALLOWED=NO \
-            TEST_RUNNER_AZ_PARITY_DIR="$RUNNER_TEMP/parity" | tee "$RUNNER_TEMP/test.log" | grep -E "PASS|FAIL|SKIP|checks passed|error:|Test Case|Executed" || true
-          grep -q "TEST SUCCEEDED" "$RUNNER_TEMP/test.log"
+            -destination "id=${{ steps.sim.outputs.udid }}" -resultBundlePath "$RUNNER_TEMP/AirZelo.xcresult" \
+            TEST_RUNNER_AZ_PARITY_DIR="$RUNNER_TEMP/parity" > "$RUNNER_TEMP/test.log" 2>&1 || true
+          grep -E "^(PASS|FAIL|SKIP) |checks passed|^ +[a-z].* s  \(limit|Test Case|Executed|error:|\*\* TEST" "$RUNNER_TEMP/test.log" || true
+          if ! grep -q "TEST SUCCEEDED" "$RUNNER_TEMP/test.log"; then
+            echo "---- failure context ----"; grep -B2 -A40 "error: -\[" "$RUNNER_TEMP/test.log" | head -200; exit 1
+          fi
+
+      - name: Keep the test log and result bundle
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-simulator-tests
+          path: |
+            ${{ runner.temp }}/test.log
+            ${{ runner.temp }}/AirZelo.xcresult
+          retention-days: 7
 
       - name: Release build for iPhone (device, unsigned)
         run: |
