@@ -1,0 +1,339 @@
+{
+ "_generated": "by ios/tools/export_schema.py from core/server/db.py - do not edit by hand",
+ "version": 4,
+ "migrations": [
+  [
+   1,
+   "initial schema"
+  ],
+  [
+   2,
+   "account type, bank name and last 4 digits"
+  ],
+  [
+   3,
+   "adjustment submission key"
+  ],
+  [
+   4,
+   "debt register linked to the ledger"
+  ]
+ ],
+ "statements": [
+  "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)",
+  "CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+  "CREATE TABLE owner(\n  id INTEGER PRIMARY KEY CHECK (id = 1),\n  username TEXT NOT NULL,\n  pw_hash TEXT NOT NULL,\n  created_at TEXT NOT NULL,\n  updated_at TEXT NOT NULL\n)",
+  "CREATE TABLE sessions(\n  token_hash TEXT PRIMARY KEY,\n  created_at TEXT NOT NULL,\n  last_seen TEXT NOT NULL,\n  expires_at TEXT NOT NULL\n)",
+  "CREATE TABLE currencies(\n  code TEXT PRIMARY KEY CHECK (length(code) = 3 AND code = upper(code)),\n  name TEXT NOT NULL,\n  symbol TEXT NOT NULL DEFAULT '',\n  active INTEGER NOT NULL DEFAULT 1\n)",
+  "CREATE TABLE counters(name TEXT PRIMARY KEY, value INTEGER NOT NULL)",
+  "CREATE TABLE customers(\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL CHECK (length(trim(name)) > 0),\n  phone TEXT, alt_phone TEXT, email TEXT, address TEXT, city TEXT, state TEXT,\n  gstin TEXT, passport_no TEXT, notes TEXT,\n  follow_up_date TEXT, follow_up_note TEXT,\n  active INTEGER NOT NULL DEFAULT 1,\n  created_at TEXT NOT NULL, updated_at TEXT NOT NULL\n)",
+  "CREATE TABLE suppliers(\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL UNIQUE COLLATE NOCASE CHECK (length(trim(name)) > 0),\n  kind TEXT NOT NULL DEFAULT 'b2b_portal'\n    CHECK (kind IN ('b2b_portal','airline','consolidator','hotel','visa','other')),\n  contact_person TEXT, phone TEXT, email TEXT, gstin TEXT, notes TEXT,\n  active INTEGER NOT NULL DEFAULT 1,\n  created_at TEXT NOT NULL, updated_at TEXT NOT NULL\n)",
+  "CREATE TABLE accounts(\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL UNIQUE COLLATE NOCASE CHECK (length(trim(name)) > 0),\n  kind TEXT NOT NULL CHECK (kind IN ('cash','bank','wallet','gateway')),\n  currency TEXT NOT NULL REFERENCES currencies(code),\n  opening_balance INTEGER NOT NULL DEFAULT 0,\n  opening_date TEXT,\n  details TEXT,\n  active INTEGER NOT NULL DEFAULT 1,\n  created_at TEXT NOT NULL, updated_at TEXT NOT NULL\n, account_type TEXT, bank_name TEXT, account_last4 TEXT)",
+  "CREATE TABLE tax_profiles(\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL UNIQUE,\n  rate TEXT NOT NULL DEFAULT '0',\n  basis TEXT NOT NULL\n    CHECK (basis IN ('none','service_charge','markup','service_and_markup','selling_price','custom')),\n  split TEXT NOT NULL DEFAULT 'none' CHECK (split IN ('none','cgst_sgst','igst')),\n  sac_code TEXT, notes TEXT,\n  active INTEGER NOT NULL DEFAULT 1\n)",
+  "CREATE TABLE expense_categories(name TEXT PRIMARY KEY, active INTEGER NOT NULL DEFAULT 1)",
+  "CREATE TABLE bookings(\n  id INTEGER PRIMARY KEY,\n  ref TEXT NOT NULL UNIQUE,\n  pnr TEXT,\n  customer_id INTEGER NOT NULL REFERENCES customers(id),\n  supplier_id INTEGER REFERENCES suppliers(id),\n  service_type TEXT NOT NULL DEFAULT 'flight'\n    CHECK (service_type IN ('flight','visa','hotel','package','umrah','other')),\n  booking_date TEXT NOT NULL,\n  travel_date TEXT,\n  return_date TEXT,\n  trip_type TEXT NOT NULL DEFAULT 'one_way' CHECK (trip_type IN ('one_way','round_trip','multi_city')),\n  status TEXT NOT NULL\n    CHECK (status IN ('enquiry','on_hold','confirmed','ticketed','cancelled','refunded')),\n  committed INTEGER NOT NULL DEFAULT 0 CHECK (committed IN (0,1)),\n  cabin TEXT, baggage TEXT, notes TEXT,\n  currency TEXT NOT NULL REFERENCES currencies(code),\n  exchange_rate TEXT NOT NULL DEFAULT '1',\n  rate_date TEXT,\n  purchase_cost INTEGER NOT NULL DEFAULT 0 CHECK (purchase_cost >= 0),\n  selling_price INTEGER NOT NULL DEFAULT 0 CHECK (selling_price >= 0),\n  commission INTEGER NOT NULL DEFAULT 0 CHECK (commission >= 0),\n  service_charge INTEGER NOT NULL DEFAULT 0 CHECK (service_charge >= 0),\n  other_income INTEGER NOT NULL DEFAULT 0 CHECK (other_income >= 0),\n  tax_profile_id INTEGER REFERENCES tax_profiles(id),\n  tax_override INTEGER NOT NULL DEFAULT 0,\n  taxable_value INTEGER NOT NULL DEFAULT 0 CHECK (taxable_value >= 0),\n  tax_rate TEXT NOT NULL DEFAULT '0',\n  tax_amount INTEGER NOT NULL DEFAULT 0 CHECK (tax_amount >= 0),\n  tax_split TEXT NOT NULL DEFAULT 'none',\n  place_of_supply TEXT,\n  created_at TEXT NOT NULL, updated_at TEXT NOT NULL\n)",
+  "CREATE TABLE booking_passengers(\n  id INTEGER PRIMARY KEY,\n  booking_id INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,\n  seq INTEGER NOT NULL DEFAULT 0,\n  title TEXT,\n  name TEXT NOT NULL CHECK (length(trim(name)) > 0),\n  pax_type TEXT NOT NULL DEFAULT 'ADT' CHECK (pax_type IN ('ADT','CHD','INF')),\n  ticket_number TEXT, passport_no TEXT, notes TEXT\n)",
+  "CREATE TABLE booking_segments(\n  id INTEGER PRIMARY KEY,\n  booking_id INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,\n  seq INTEGER NOT NULL DEFAULT 0,\n  direction TEXT NOT NULL DEFAULT 'outbound' CHECK (direction IN ('outbound','return','other')),\n  airline TEXT, flight_no TEXT, origin TEXT, destination TEXT,\n  dep_at TEXT, arr_at TEXT, cabin TEXT, baggage TEXT, airline_pnr TEXT\n)",
+  "CREATE TABLE booking_adjustments(\n  id INTEGER PRIMARY KEY,\n  adj_no TEXT NOT NULL UNIQUE,\n  booking_id INTEGER NOT NULL REFERENCES bookings(id),\n  adj_date TEXT NOT NULL,\n  kind TEXT NOT NULL CHECK (kind IN ('cancellation','refund','reissue','date_change','other')),\n  sign INTEGER NOT NULL DEFAULT 1 CHECK (sign IN (1,-1)),\n  exchange_rate TEXT NOT NULL,\n  customer_credit INTEGER NOT NULL DEFAULT 0 CHECK (customer_credit >= 0),\n  customer_credit_tax INTEGER NOT NULL DEFAULT 0\n    CHECK (customer_credit_tax >= 0 AND customer_credit_tax <= customer_credit),\n  supplier_credit INTEGER NOT NULL DEFAULT 0 CHECK (supplier_credit >= 0),\n  commission_reversal INTEGER NOT NULL DEFAULT 0 CHECK (commission_reversal >= 0),\n  extra_customer_charge INTEGER NOT NULL DEFAULT 0 CHECK (extra_customer_charge >= 0),\n  extra_supplier_charge INTEGER NOT NULL DEFAULT 0 CHECK (extra_supplier_charge >= 0),\n  notes TEXT,\n  reversal_of INTEGER REFERENCES booking_adjustments(id),\n  reversed_by INTEGER REFERENCES booking_adjustments(id),\n  created_at TEXT NOT NULL\n, idem_key TEXT)",
+  "CREATE TABLE allocations(\n  id INTEGER PRIMARY KEY,\n  txn_id INTEGER NOT NULL REFERENCES transactions(id),\n  booking_id INTEGER NOT NULL REFERENCES bookings(id),\n  amount INTEGER NOT NULL CHECK (amount > 0),\n  created_at TEXT NOT NULL,\n  UNIQUE(txn_id, booking_id)\n)",
+  "CREATE TABLE invoices(\n  id INTEGER PRIMARY KEY,\n  number TEXT NOT NULL UNIQUE,\n  doc_type TEXT NOT NULL CHECK (doc_type IN ('invoice','credit_note')),\n  booking_id INTEGER NOT NULL REFERENCES bookings(id),\n  customer_id INTEGER NOT NULL REFERENCES customers(id),\n  adjustment_id INTEGER REFERENCES booking_adjustments(id),\n  related_invoice_id INTEGER REFERENCES invoices(id),\n  issue_date TEXT NOT NULL,\n  currency TEXT NOT NULL,\n  lines_json TEXT NOT NULL,\n  tax_json TEXT NOT NULL DEFAULT '[]',\n  subtotal INTEGER NOT NULL,\n  tax_total INTEGER NOT NULL,\n  total INTEGER NOT NULL,\n  notes TEXT,\n  status TEXT NOT NULL DEFAULT 'issued' CHECK (status IN ('issued','cancelled')),\n  cancel_reason TEXT,\n  created_at TEXT NOT NULL\n)",
+  "CREATE TABLE documents(\n  id INTEGER PRIMARY KEY,\n  booking_id INTEGER REFERENCES bookings(id),\n  transaction_id INTEGER REFERENCES transactions(id),\n  original_name TEXT NOT NULL,\n  stored_name TEXT NOT NULL UNIQUE,\n  mime TEXT NOT NULL,\n  size INTEGER NOT NULL,\n  sha256 TEXT NOT NULL,\n  label TEXT,\n  deleted INTEGER NOT NULL DEFAULT 0,\n  uploaded_at TEXT NOT NULL\n)",
+  "CREATE TABLE booking_history(\n  id INTEGER PRIMARY KEY,\n  booking_id INTEGER NOT NULL REFERENCES bookings(id),\n  at TEXT NOT NULL,\n  action TEXT NOT NULL,\n  detail TEXT\n)",
+  "CREATE TABLE audit_log(\n  id INTEGER PRIMARY KEY,\n  at TEXT NOT NULL,\n  entity TEXT NOT NULL,\n  entity_id TEXT,\n  action TEXT NOT NULL,\n  before_json TEXT,\n  after_json TEXT\n)",
+  "CREATE TABLE reconciliations(\n  id INTEGER PRIMARY KEY,\n  account_id INTEGER NOT NULL REFERENCES accounts(id),\n  statement_date TEXT NOT NULL,\n  statement_balance INTEGER NOT NULL,\n  cleared_balance INTEGER NOT NULL,\n  difference INTEGER NOT NULL,\n  notes TEXT,\n  created_at TEXT NOT NULL\n)",
+  "CREATE TABLE debts (\n  id INTEGER PRIMARY KEY,\n  debt_no TEXT NOT NULL UNIQUE,\n  creditor TEXT NOT NULL,\n  creditor_type TEXT NOT NULL DEFAULT 'other'\n    CHECK (creditor_type IN ('bank','nbfc','person','supplier','credit_card','other')),\n  creditor_phone TEXT,\n  reference TEXT,\n  start_date TEXT NOT NULL,\n  due_date TEXT,\n  currency TEXT NOT NULL,\n  opening_amount INTEGER NOT NULL DEFAULT 0 CHECK (opening_amount >= 0),\n  interest_rate TEXT,\n  interest_terms TEXT,\n  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),\n  notes TEXT,\n  idem_key TEXT,\n  created_at TEXT NOT NULL,\n  updated_at TEXT NOT NULL\n)",
+  "CREATE TABLE debt_entries (\n  id INTEGER PRIMARY KEY,\n  entry_no TEXT NOT NULL UNIQUE,\n  debt_id INTEGER NOT NULL REFERENCES debts(id),\n  entry_date TEXT NOT NULL,\n  kind TEXT NOT NULL CHECK (kind IN ('interest_charge')),\n  sign INTEGER NOT NULL DEFAULT 1 CHECK (sign IN (1,-1)),\n  amount INTEGER NOT NULL CHECK (amount > 0),\n  reference TEXT,\n  notes TEXT,\n  reversal_of INTEGER REFERENCES debt_entries(id),\n  reversed_by INTEGER REFERENCES debt_entries(id),\n  idem_key TEXT,\n  created_at TEXT NOT NULL\n)",
+  "CREATE TABLE \"transactions\"(\n  id INTEGER PRIMARY KEY,\n  txn_no TEXT NOT NULL UNIQUE,\n  uid TEXT NOT NULL UNIQUE,\n  idem_key TEXT UNIQUE,\n  txn_date TEXT NOT NULL,\n  kind TEXT NOT NULL CHECK (kind IN ('customer_receipt','supplier_payment','customer_refund',\n                                     'supplier_receipt','expense','other_income','transfer',\n                                     'loan_received','loan_repayment')),\n  sign INTEGER NOT NULL DEFAULT 1 CHECK (sign IN (1,-1)),\n  amount INTEGER NOT NULL CHECK (amount > 0),\n  currency TEXT NOT NULL REFERENCES currencies(code),\n  exchange_rate TEXT NOT NULL,\n  rate_date TEXT,\n  base_amount INTEGER NOT NULL CHECK (base_amount >= 0),\n  account_id INTEGER NOT NULL REFERENCES accounts(id),\n  to_account_id INTEGER REFERENCES accounts(id),\n  to_amount INTEGER,\n  method TEXT NOT NULL,\n  reference TEXT,\n  category TEXT NOT NULL,\n  customer_id INTEGER REFERENCES customers(id),\n  supplier_id INTEGER REFERENCES suppliers(id),\n  booking_id INTEGER REFERENCES bookings(id),\n  is_direct INTEGER NOT NULL DEFAULT 0 CHECK (is_direct IN (0,1)),\n  payee TEXT,\n  notes TEXT,\n  reversal_of INTEGER REFERENCES transactions(id),\n  reversed_by INTEGER REFERENCES transactions(id),\n  reconciled INTEGER NOT NULL DEFAULT 0 CHECK (reconciled IN (0,1)),\n  reconciled_on TEXT,\n  created_at TEXT NOT NULL,\n  updated_at TEXT NOT NULL\n, debt_id INTEGER)",
+  "CREATE INDEX idx_customers_phone ON customers(phone)",
+  "CREATE INDEX idx_customers_name ON customers(name COLLATE NOCASE)",
+  "CREATE INDEX idx_bookings_pnr ON bookings(pnr COLLATE NOCASE)",
+  "CREATE INDEX idx_bookings_customer ON bookings(customer_id)",
+  "CREATE INDEX idx_bookings_supplier ON bookings(supplier_id)",
+  "CREATE INDEX idx_bookings_date ON bookings(booking_date)",
+  "CREATE INDEX idx_bookings_travel ON bookings(travel_date)",
+  "CREATE UNIQUE INDEX ux_ticket_number ON booking_passengers(ticket_number)\n  WHERE ticket_number IS NOT NULL AND ticket_number <> ''",
+  "CREATE INDEX idx_pax_name ON booking_passengers(name COLLATE NOCASE)",
+  "CREATE INDEX idx_pax_booking ON booking_passengers(booking_id)",
+  "CREATE INDEX idx_seg_booking ON booking_segments(booking_id)",
+  "CREATE INDEX idx_seg_dep ON booking_segments(dep_at)",
+  "CREATE INDEX idx_adj_booking ON booking_adjustments(booking_id)",
+  "CREATE INDEX idx_alloc_booking ON allocations(booking_id)",
+  "CREATE INDEX idx_inv_booking ON invoices(booking_id)",
+  "CREATE INDEX idx_hist_booking ON booking_history(booking_id)",
+  "CREATE INDEX idx_audit_entity ON audit_log(entity, entity_id)",
+  "CREATE UNIQUE INDEX ux_adj_idem ON booking_adjustments(idem_key) WHERE idem_key IS NOT NULL",
+  "CREATE UNIQUE INDEX ux_debt_idem ON debts(idem_key) WHERE idem_key IS NOT NULL",
+  "CREATE INDEX ix_debt_entries_debt ON debt_entries(debt_id, entry_date)",
+  "CREATE UNIQUE INDEX ux_debt_entry_idem ON debt_entries(idem_key) WHERE idem_key IS NOT NULL",
+  "CREATE INDEX idx_txn_account ON transactions(account_id)",
+  "CREATE INDEX idx_txn_booking ON transactions(booking_id)",
+  "CREATE INDEX idx_txn_customer ON transactions(customer_id)",
+  "CREATE INDEX idx_txn_date ON transactions(txn_date)",
+  "CREATE INDEX idx_txn_kind ON transactions(kind)",
+  "CREATE INDEX idx_txn_supplier ON transactions(supplier_id)",
+  "CREATE TRIGGER trg_adj_no_delete BEFORE DELETE ON booking_adjustments\nBEGIN SELECT RAISE(ABORT, 'Posted adjustments cannot be deleted. Reverse them instead.'); END",
+  "CREATE TRIGGER trg_adj_immutable BEFORE UPDATE OF booking_id, adj_date, kind, sign, exchange_rate,\n  customer_credit, customer_credit_tax, supplier_credit, commission_reversal,\n  extra_customer_charge, extra_supplier_charge, reversal_of ON booking_adjustments\nBEGIN SELECT RAISE(ABORT, 'Posted adjustments cannot be changed. Reverse them instead.'); END",
+  "CREATE TRIGGER trg_inv_no_delete BEFORE DELETE ON invoices\nBEGIN SELECT RAISE(ABORT, 'Invoices cannot be deleted. Cancel them instead.'); END",
+  "CREATE TRIGGER trg_inv_immutable BEFORE UPDATE OF number, doc_type, booking_id, customer_id,\n  issue_date, currency, lines_json, tax_json, subtotal, tax_total, total ON invoices\nBEGIN SELECT RAISE(ABORT, 'Issued invoices cannot be changed. Cancel and reissue instead.'); END",
+  "CREATE TRIGGER trg_audit_no_delete BEFORE DELETE ON audit_log\nBEGIN SELECT RAISE(ABORT, 'Audit log entries cannot be deleted.'); END",
+  "CREATE TRIGGER trg_audit_no_update BEFORE UPDATE ON audit_log\nBEGIN SELECT RAISE(ABORT, 'Audit log entries cannot be changed.'); END",
+  "CREATE TRIGGER trg_debt_entry_no_delete BEFORE DELETE ON debt_entries\nBEGIN SELECT RAISE(ABORT, 'Debt entries cannot be deleted. Reverse them instead.'); END",
+  "CREATE TRIGGER trg_debt_entry_immutable BEFORE UPDATE OF debt_id, entry_date, kind, sign, amount, reversal_of ON debt_entries\nBEGIN SELECT RAISE(ABORT, 'Debt entries cannot be changed. Reverse them instead.'); END",
+  "CREATE TRIGGER trg_txn_debt_immutable BEFORE UPDATE OF debt_id ON transactions\nBEGIN SELECT RAISE(ABORT, 'The debt linked to a posted transaction cannot be changed. Reverse it instead.'); END",
+  "CREATE TRIGGER trg_txn_debt_valid BEFORE INSERT ON transactions\nWHEN NEW.debt_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM debts WHERE id = NEW.debt_id)\nBEGIN SELECT RAISE(ABORT, 'The linked debt does not exist.'); END",
+  "CREATE TRIGGER trg_txn_immutable BEFORE UPDATE OF txn_date, kind, sign, amount, currency,\n  exchange_rate, base_amount, account_id, to_account_id, to_amount, customer_id, supplier_id,\n  booking_id, is_direct, reversal_of ON transactions\nBEGIN SELECT RAISE(ABORT, 'Posted transaction amounts cannot be changed. Reverse and re-enter instead.'); END",
+  "CREATE TRIGGER trg_txn_loan_needs_debt BEFORE INSERT ON transactions\nWHEN NEW.kind IN ('loan_received', 'loan_repayment') AND NEW.debt_id IS NULL\nBEGIN SELECT RAISE(ABORT, 'A loan transaction must be linked to a debt.'); END",
+  "CREATE TRIGGER trg_txn_no_delete BEFORE DELETE ON transactions\nBEGIN SELECT RAISE(ABORT, 'Posted transactions cannot be deleted. Reverse them instead.'); END",
+  "CREATE TRIGGER trg_debt_no_delete_linked BEFORE DELETE ON debts\nWHEN EXISTS (SELECT 1 FROM transactions WHERE debt_id = OLD.id) OR EXISTS (SELECT 1 FROM debt_entries WHERE debt_id = OLD.id)\nBEGIN SELECT RAISE(ABORT, 'This debt has transactions, so it cannot be deleted.'); END"
+ ],
+ "migration_data": [
+  [
+   "expense_categories",
+   [
+    "name",
+    "active"
+   ],
+   [
+    "Loan interest",
+    1
+   ]
+  ]
+ ],
+ "seed": {
+  "settings": [
+   [
+    "base_currency",
+    "INR"
+   ],
+   [
+    "business_name",
+    ""
+   ],
+   [
+    "business_tagline",
+    ""
+   ],
+   [
+    "business_address",
+    ""
+   ],
+   [
+    "business_phone",
+    ""
+   ],
+   [
+    "business_email",
+    ""
+   ],
+   [
+    "business_gstin",
+    ""
+   ],
+   [
+    "business_state",
+    ""
+   ],
+   [
+    "booking_prefix",
+    "BK-"
+   ],
+   [
+    "invoice_prefix",
+    "INV/"
+   ],
+   [
+    "credit_note_prefix",
+    "CN/"
+   ],
+   [
+    "invoice_terms",
+    "Fares are subject to airline rules. Please verify passenger names and travel documents."
+   ],
+   [
+    "invoice_footer",
+    "Thank you for travelling with us."
+   ],
+   [
+    "auto_backup_hours",
+    "24"
+   ],
+   [
+    "backup_keep",
+    "30"
+   ],
+   [
+    "session_hours",
+    "8"
+   ],
+   [
+    "pay_account_name",
+    ""
+   ],
+   [
+    "pay_account_number",
+    ""
+   ],
+   [
+    "pay_ifsc",
+    ""
+   ],
+   [
+    "pay_branch",
+    ""
+   ],
+   [
+    "pay_bank_name",
+    ""
+   ],
+   [
+    "pay_upi_number",
+    ""
+   ],
+   [
+    "pay_upi_apps",
+    "Google Pay, PhonePe, BHIM UPI"
+   ],
+   [
+    "legal_name",
+    ""
+   ],
+   [
+    "business_country",
+    "India"
+   ],
+   [
+    "business_website",
+    ""
+   ],
+   [
+    "business_registration",
+    ""
+   ],
+   [
+    "receipt_footer",
+    "Thank you for your payment."
+   ],
+   [
+    "brand_color",
+    "#1B3FCC"
+   ],
+   [
+    "logo_file",
+    ""
+   ],
+   [
+    "receipt_prefix",
+    "RCT"
+   ],
+   [
+    "date_format",
+    "DD MMM YYYY"
+   ],
+   [
+    "currency_display",
+    "symbol"
+   ],
+   [
+    "report_default_period",
+    "month"
+   ],
+   [
+    "setup_completed",
+    "0"
+   ]
+  ],
+  "currencies": [
+   [
+    "INR",
+    "Indian Rupee",
+    "₹"
+   ],
+   [
+    "SAR",
+    "Saudi Riyal",
+    "SAR"
+   ],
+   [
+    "AED",
+    "UAE Dirham",
+    "AED"
+   ],
+   [
+    "USD",
+    "US Dollar",
+    "$"
+   ],
+   [
+    "QAR",
+    "Qatari Riyal",
+    "QAR"
+   ],
+   [
+    "OMR",
+    "Omani Rial",
+    "OMR"
+   ],
+   [
+    "KWD",
+    "Kuwaiti Dinar",
+    "KWD"
+   ],
+   [
+    "BHD",
+    "Bahraini Dinar",
+    "BHD"
+   ]
+  ],
+  "expense_categories": [
+   "Office expenses",
+   "Rent",
+   "Salaries & wages",
+   "Internet & software",
+   "Telephone",
+   "Marketing & advertising",
+   "Bank charges",
+   "Payment gateway charges",
+   "Travel & conveyance",
+   "Professional fees",
+   "Utilities",
+   "Printing & stationery",
+   "Repairs & maintenance",
+   "Direct booking cost",
+   "Other operating expenses"
+  ],
+  "tax_profiles": [
+   [
+    "No tax",
+    "0",
+    "none",
+    "none",
+    "",
+    "No tax charged on this booking."
+   ],
+   [
+    "GST 18% on service charge (CGST+SGST) - review with CA",
+    "18",
+    "service_charge",
+    "cgst_sgst",
+    "998555",
+    "Template. Confirm taxable value, rate, SAC and place of supply with your CA before use."
+   ],
+   [
+    "IGST 18% on service charge - review with CA",
+    "18",
+    "service_charge",
+    "igst",
+    "998555",
+    "Template. Confirm taxable value, rate, SAC and place of supply with your CA before use."
+   ],
+   [
+    "Custom taxable value",
+    "0",
+    "custom",
+    "none",
+    "",
+    "Enter the taxable value and rate manually on the booking."
+   ]
+  ]
+ }
+}

@@ -46,3 +46,10 @@ ios/AirZeloKit/.swiftpm/
 ios/AirZelo/AirZelo.xcodeproj/
 ios/build/
 ios/AirZelo/Generated/
+
+# Android: Gradle caches, build output, local SDK path, signing material
+android/.gradle/
+android/**/build/
+android/local.properties
+*.jks
+*.keystore

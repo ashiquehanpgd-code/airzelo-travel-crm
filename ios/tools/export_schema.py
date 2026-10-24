@@ -20,6 +20,8 @@ sys.path.insert(0, str(ROOT / "core"))
 from server import db  # noqa: E402
 
 OUT = ROOT / "ios" / "AirZeloKit" / "Sources" / "AirZeloKit" / "Database" / "Schema.generated.swift"
+# the Android engine reads the same schema as a JSON resource
+OUT_ANDROID = ROOT / "android" / "engine" / "src" / "main" / "resources" / "com" / "airzelo" / "engine" / "schema.json"
 
 
 def schema_statements():
@@ -75,17 +77,30 @@ def render():
     return "\n".join(out) + "\n"
 
 
+def render_android():
+    stmts, versions, data = schema_statements()
+    seed = {"settings": list(db.DEFAULT_SETTINGS.items()), "currencies": db.DEFAULT_CURRENCIES,
+            "expense_categories": db.DEFAULT_EXPENSE_CATEGORIES, "tax_profiles": db.DEFAULT_TAX_PROFILES}
+    doc = {"_generated": "by ios/tools/export_schema.py from core/server/db.py - do not edit by hand",
+           "version": versions[-1][0], "migrations": versions, "statements": stmts, "migration_data": data, "seed": seed}
+    return json.dumps(doc, ensure_ascii=False, indent=1) + "\n"
+
+
 def main():
-    text = render()
+    outputs = [(OUT, render())]
+    if OUT_ANDROID.parent.parent.parent.parent.parent.exists():  # android/engine/src/main
+        outputs.append((OUT_ANDROID, render_android()))
     if "--check" in sys.argv:
-        if not OUT.exists() or OUT.read_text(encoding="utf-8") != text:
-            print("Schema.generated.swift is out of date: run python3 ios/tools/export_schema.py")
+        stale = [p for p, text in outputs if not p.exists() or p.read_text(encoding="utf-8") != text]
+        if stale:
+            print("out of date (run python3 ios/tools/export_schema.py):", ", ".join(str(p.relative_to(ROOT)) for p in stale))
             sys.exit(1)
-        print("Schema.generated.swift matches the desktop schema")
+        print("generated schema matches the desktop schema:", ", ".join(str(p.relative_to(ROOT)) for p, _ in outputs))
         return
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(text, encoding="utf-8")
-    print("wrote", OUT.relative_to(ROOT))
+    for p, text in outputs:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+        print("wrote", p.relative_to(ROOT))
 
 
 if __name__ == "__main__":
