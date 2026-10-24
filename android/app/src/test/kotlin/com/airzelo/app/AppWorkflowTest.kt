@@ -5,6 +5,8 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -70,6 +72,12 @@ class AppWorkflowTest {
     private fun click(tag: String) = compose.onNodeWithTag(tag).performScrollTo().performClick()
 
     @Test fun bookingPaymentEditBackupRestore() {
+        compose.waitForIdle()
+        println(compose.onRoot().printToString(maxDepth = 6))
+        assertNull("startup: " + onMain { it.startupProblem }, onMain { it.startupProblem })
+        assertFalse("unlocked in tests", onMain { it.locked })
+        assertTrue("books open", onMain { it.agency != null })
+
         // 1. a booking with a new customer, a passenger (passport encrypted) and a flight
         compose.onNodeWithTag("tab-bookings").performClick()
         compose.onNodeWithTag("new-booking").performClick()
