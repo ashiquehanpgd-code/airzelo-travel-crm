@@ -12,6 +12,10 @@
 name: ios-build
 
 on:
+  # manual runs need this file on the default branch; until then it also runs on pushes to the feature branch
+  push:
+    branches: ["feature/ios-offline-app"]
+    paths: ["ios/**", ".github/workflows/ios-build.yml"]
   workflow_dispatch:
     inputs:
       export_method:
@@ -81,7 +85,7 @@ jobs:
           IOS_CERT_P12_BASE64: ${{ secrets.IOS_CERT_P12_BASE64 }}
           IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
           IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
-          METHOD: ${{ inputs.export_method }}
+          METHOD: ${{ inputs.export_method || 'debugging' }}
         run: |
           set -euo pipefail
           kc="$RUNNER_TEMP/signing.keychain-db"; kcpw=$(uuidgen)
