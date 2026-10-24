@@ -19,11 +19,13 @@ final class SmokeUITests: XCTestCase {
 
     func testBookingAndPaymentOffline() {
         let app = XCUIApplication()
-        app.launchArguments = ["-uitest"]
+        app.launchArguments = ["-uitest", "-uitest-tab", "bookings"]
         app.launch()
 
-        app.tabBars.buttons["Bookings"].tap()
-        app.navigationBars.buttons["New booking"].tap()
+        XCTAssertTrue(app.navigationBars["Bookings"].waitForExistence(timeout: 15), "Bookings screen")
+        let add = app.navigationBars["Bookings"].buttons["New booking"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5), "New booking button")
+        add.tap()
         type("new-customer-name", "UI Test Customer", in: app)
         type("pnr", "UIT001", in: app)
         type("selling-price", "12500", in: app)

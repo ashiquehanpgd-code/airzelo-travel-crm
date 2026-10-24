@@ -83,10 +83,12 @@ jobs:
       - name: Unit + engine checks + UI smoke test on the simulator
         run: |
           set -o pipefail
+          # TEST_RUNNER_* environment variables reach the tests as AZ_* (they must be environment, not build settings)
+          export TEST_RUNNER_AZ_PARITY_DIR="$RUNNER_TEMP/parity" TEST_RUNNER_AZ_REQUIRE_PARITY=1
           xcodebuild test -project ios/AirZelo/AirZelo.xcodeproj -scheme AirZelo \
             -destination "id=${{ steps.sim.outputs.udid }}" -resultBundlePath "$RUNNER_TEMP/AirZelo.xcresult" \
-            TEST_RUNNER_AZ_PARITY_DIR="$RUNNER_TEMP/parity" > "$RUNNER_TEMP/test.log" 2>&1 || true
-          grep -E "^(PASS|FAIL|SKIP) |checks passed|^ +[a-z].* s  \(limit|Test Case|Executed|error:|\*\* TEST" "$RUNNER_TEMP/test.log" || true
+            > "$RUNNER_TEMP/test.log" 2>&1 || true
+          grep -E "^(PASS|FAIL|SKIP) |^       |checks passed|Test Case|Executed|error:|\*\* TEST" "$RUNNER_TEMP/test.log" || true
           if ! grep -q "TEST SUCCEEDED" "$RUNNER_TEMP/test.log"; then
             echo "---- failure context ----"; grep -B2 -A40 "error: -\[" "$RUNNER_TEMP/test.log" | head -200; exit 1
           fi

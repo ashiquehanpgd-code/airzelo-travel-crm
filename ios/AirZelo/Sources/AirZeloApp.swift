@@ -160,13 +160,21 @@ struct StartupProblemView: View {
 }
 
 struct MainTabs: View {
+    @EnvironmentObject var model: AppModel
+    @State private var tab = "home"
+
     var body: some View {
-        TabView {
-            NavigationStack { DashboardView() }.tabItem { Label("Home", systemImage: "house") }
-            NavigationStack { BookingListView() }.tabItem { Label("Bookings", systemImage: "airplane") }
-            NavigationStack { CustomerListView() }.tabItem { Label("Customers", systemImage: "person.2") }
-            NavigationStack { TransactionListView() }.tabItem { Label("Money", systemImage: "indianrupeesign.circle") }
-            NavigationStack { MoreView() }.tabItem { Label("More", systemImage: "ellipsis.circle") }
+        TabView(selection: $tab) {
+            NavigationStack { DashboardView() }.tabItem { Label("Home", systemImage: "house") }.tag("home")
+            NavigationStack { BookingListView() }.tabItem { Label("Bookings", systemImage: "airplane") }.tag("bookings")
+            NavigationStack { CustomerListView() }.tabItem { Label("Customers", systemImage: "person.2") }.tag("customers")
+            NavigationStack { TransactionListView() }.tabItem { Label("Money", systemImage: "indianrupeesign.circle") }.tag("money")
+            NavigationStack { MoreView() }.tabItem { Label("More", systemImage: "ellipsis.circle") }.tag("more")
+        }
+        .onAppear {
+            // UI tests (DEBUG only) can open a given tab directly: -uitest-tab bookings
+            let args = ProcessInfo.processInfo.arguments
+            if model.uiTesting, let i = args.firstIndex(of: "-uitest-tab"), i + 1 < args.count { tab = args[i + 1] }
         }
     }
 }

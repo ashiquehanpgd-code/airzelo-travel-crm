@@ -16,6 +16,9 @@ final class EngineChecksTests: XCTestCase {
                 if !r.passed { XCTFail("\(r.name): \(r.detail)") }
             }
         }
+        if ProcessInfo.processInfo.environment["AZ_REQUIRE_PARITY"] == "1" {
+            XCTAssertNotNil(options.parityDir, "AZ_PARITY_DIR was not passed to the simulator")
+        }
         if options.parityDir != nil {
             let skipped = results.filter { $0.detail.hasPrefix("skipped") }.map { $0.name }
             XCTAssertFalse(skipped.contains { $0.hasPrefix("parity") }, "parity checks must run when AZ_PARITY_DIR is set")
