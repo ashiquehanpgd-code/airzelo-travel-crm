@@ -39,3 +39,9 @@ __pycache__/
 **/AirZelo-backups/
 *.sqlite
 *.sqlite3
+
+# iPhone app: Swift build output and generated Xcode project
+ios/AirZeloKit/.build/
+ios/AirZeloKit/.swiftpm/
+ios/AirZelo/AirZelo.xcodeproj/
+ios/build/
