@@ -133,7 +133,7 @@ jobs:
           $exe = Join-Path $dir 'AirZelo.exe'
           if (-not (Test-Path $exe)) { throw "AirZelo.exe not installed in $dir" }
           $got = (Get-Item $exe).VersionInfo.ProductVersion
-          if ($got -ne $version) { throw "installed version $got, expected $version" }
+          if ($got -ne $version -and $got -ne "$version.0") { throw "installed version $got, expected $version" }
           $entry = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall | Get-ItemProperty | Where-Object DisplayName -like 'AirZelo*'
           if (-not $entry) { throw 'no Add/Remove Programs entry' }
           "installed: $exe, version $got, registered as '$($entry.DisplayName)' $($entry.DisplayVersion)"
