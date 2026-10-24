@@ -5,14 +5,29 @@ import XCTest
 final class SmokeUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
+    /// Waits for the element; scrolls only when it exists but is off screen (lazy forms create rows as they scroll in).
     func reveal(_ el: XCUIElement, in app: XCUIApplication) {
-        for _ in 0..<10 where !(el.exists && el.isHittable) { app.swipeUp() }
+        if el.waitForExistence(timeout: 3) && el.isHittable { return }
+        for _ in 0..<8 where !(el.exists && el.isHittable) { app.swipeUp() }
+    }
+
+    /// On failure: the full accessibility tree in the log and a screenshot in the result bundle.
+    func diagnose(_ what: String, _ app: XCUIApplication) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = what
+        shot.lifetime = .keepAlways
+        add(shot)
+        print("---- UI hierarchy (\(what)) ----\n\(app.debugDescription)")
     }
 
     func type(_ id: String, _ text: String, in app: XCUIApplication) {
         let f = app.textFields[id]
         reveal(f, in: app)
-        XCTAssertTrue(f.waitForExistence(timeout: 5), "field \(id)")
+        guard f.exists else {
+            diagnose("missing field \(id)", app)
+            XCTFail("field \(id) not found")
+            return
+        }
         f.tap()
         f.typeText(text)
     }
