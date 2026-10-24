@@ -1,0 +1,133 @@
+# Builds installable iPhone artifacts from the iOS app. Run it by hand (Actions > ios-build > Run workflow).
+#
+# Always produced (and verified):
+#   AirZelo-<version>-ios-arm64-UNSIGNED.ipa   Release build for a real iPhone. NOT installable as is: iOS only runs
+#                                              apps signed for the device. Sign it (see ios/README.md) or add secrets.
+#   AirZelo-<version>-ios-SIMULATOR.app.zip    For the iOS Simulator on a Mac only; does not run on an iPhone.
+#
+# Produced only when the owner's signing secrets exist (nothing is signed with anyone else's identity):
+#   AirZelo-<version>-ios-arm64-signed.ipa     installs on the devices in the provisioning profile
+#   secrets: IOS_TEAM_ID, IOS_CERT_P12_BASE64, IOS_CERT_PASSWORD, IOS_PROFILE_BASE64
+#   input export_method: debugging (development profile) | release-testing (ad hoc profile)
+name: ios-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      export_method:
+        description: "Signed export method (used only when signing secrets exist)"
+        type: choice
+        options: [debugging, release-testing]
+        default: debugging
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    env:
+      HAS_SIGNING: ${{ secrets.IOS_CERT_P12_BASE64 != '' && secrets.IOS_PROFILE_BASE64 != '' && secrets.IOS_TEAM_ID != '' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec ios/AirZelo/project.yml
+          xcodebuild -version
+
+      - name: Release build for iPhone (arm64, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build -project ios/AirZelo/AirZelo.xcodeproj -scheme AirZelo -configuration Release \
+            -destination "generic/platform=iOS" -derivedDataPath "$RUNNER_TEMP/dd-device" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | tail -3
+
+      - name: Simulator build
+        run: |
+          set -o pipefail
+          xcodebuild build -project ios/AirZelo/AirZelo.xcodeproj -scheme AirZelo -configuration Release \
+            -destination "generic/platform=iOS Simulator" -derivedDataPath "$RUNNER_TEMP/dd-sim" | tail -3
+
+      - name: Package and verify
+        id: pkg
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/dd-device/Build/Products/Release-iphoneos/AirZelo.app"
+          sim="$RUNNER_TEMP/dd-sim/Build/Products/Release-iphonesimulator/AirZelo.app"
+          ver=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Info.plist")
+          out="$RUNNER_TEMP/out"; mkdir -p "$out/Payload"
+          cp -R "$app" "$out/Payload/"
+          (cd "$out" && zip -qry "AirZelo-$ver-ios-arm64-UNSIGNED.ipa" Payload && rm -rf Payload)
+          (cd "$(dirname "$sim")" && zip -qry "$out/AirZelo-$ver-ios-SIMULATOR.app.zip" AirZelo.app)
+          echo "== device app"
+          plutil -p "$app/Info.plist" | grep -E "CFBundleIdentifier|CFBundleShortVersionString|CFBundleVersion|MinimumOSVersion|DTPlatformName|UIDeviceFamily" -A0
+          file "$app/AirZelo"
+          test "$(lipo -archs "$app/AirZelo")" = "arm64"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :DTPlatformName' "$app/Info.plist")" = "iphoneos"
+          if codesign -dv "$app" 2>/dev/null; then echo "signature: present"; else echo "signature: NONE (unsigned, as expected)"; fi
+          echo "== simulator app"
+          file "$sim/AirZelo"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :DTPlatformName' "$sim/Info.plist")" = "iphonesimulator"
+          echo "== artifacts"
+          (cd "$out" && unzip -l "AirZelo-$ver-ios-arm64-UNSIGNED.ipa" | head -5 && ls -l && shasum -a 256 *.ipa *.zip | tee SHA256SUMS.txt)
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Signed IPA (only with the owner's signing secrets)
+        if: env.HAS_SIGNING == 'true'
+        env:
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          IOS_CERT_P12_BASE64: ${{ secrets.IOS_CERT_P12_BASE64 }}
+          IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+          METHOD: ${{ inputs.export_method }}
+        run: |
+          set -euo pipefail
+          kc="$RUNNER_TEMP/signing.keychain-db"; kcpw=$(uuidgen)
+          echo "$IOS_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          security import "$RUNNER_TEMP/cert.p12" -P "$IOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$kc"
+          security set-key-partition-list -S apple-tool:,apple: -k "$kcpw" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          echo "$IOS_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/app.mobileprovision"
+          security cms -D -i "$RUNNER_TEMP/app.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          uuid=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$RUNNER_TEMP/profile.plist")
+          pname=$(/usr/libexec/PlistBuddy -c "Print :Name" "$RUNNER_TEMP/profile.plist")
+          appid=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$RUNNER_TEMP/profile.plist")
+          bundle="${appid#*.}"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$RUNNER_TEMP/app.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$uuid.mobileprovision"
+          echo "profile '$pname' for $bundle"
+          xcodebuild archive -project ios/AirZelo/AirZelo.xcodeproj -scheme AirZelo -configuration Release \
+            -destination "generic/platform=iOS" -archivePath "$RUNNER_TEMP/AirZelo.xcarchive" \
+            DEVELOPMENT_TEAM="$IOS_TEAM_ID" PRODUCT_BUNDLE_IDENTIFIER="$bundle" CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Development" PROVISIONING_PROFILE_SPECIFIER="$pname" | tail -3
+          if [ "$METHOD" = "release-testing" ]; then ident="Apple Distribution"; else ident="Apple Development"; fi
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>$METHOD</string>
+            <key>teamID</key><string>$IOS_TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>$ident</string>
+            <key>provisioningProfiles</key><dict><key>$bundle</key><string>$pname</string></dict>
+          </dict></plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/AirZelo.xcarchive" -exportPath "$RUNNER_TEMP/signed" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" | tail -3
+          ver="${{ steps.pkg.outputs.version }}"
+          mv "$RUNNER_TEMP/signed/AirZelo.ipa" "$RUNNER_TEMP/out/AirZelo-$ver-ios-arm64-signed.ipa"
+          (cd "$RUNNER_TEMP/out" && unzip -q -o "AirZelo-$ver-ios-arm64-signed.ipa" -d chk && codesign --verify --deep --strict chk/Payload/AirZelo.app \
+            && echo "signed IPA verified" && rm -rf chk && shasum -a 256 *.ipa *.zip > SHA256SUMS.txt)
+          security delete-keychain "$kc"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: AirZelo-${{ steps.pkg.outputs.version }}-ios-builds
+          path: ${{ runner.temp }}/out/*
+          if-no-files-found: error
+          retention-days: 30
