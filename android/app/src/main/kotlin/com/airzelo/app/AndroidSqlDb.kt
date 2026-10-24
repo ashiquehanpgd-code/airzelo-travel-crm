@@ -72,7 +72,7 @@ class AndroidSqlDb private constructor(override val path: String, private val db
             if (now != want) db.rawQuery(sql, null).use { it.moveToFirst() }
             return@wrap listOf(Row(listOf("journal_mode"), listOf(SqlValue.T(want))))
         }
-        val cursor = db.rawQueryWithFactory({ _, driver, editTable, q -> bind(q, args); SQLiteCursor(driver, editTable, q) }, sql, null, null)
+        val cursor = db.rawQueryWithFactory({ _, driver, editTable, q -> bind(q, args); SQLiteCursor(driver, editTable, q) }, sql, null, "")
         cursor.use { c -> rows(c) }
     }
 
