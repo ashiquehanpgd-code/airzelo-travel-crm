@@ -14,6 +14,7 @@ core (core/server), then writes:
 
 The iPhone check writes <out>/iphone-export.zip (a portable export of the replayed books); then
   python3 ios/tools/parity.py --check-export <out>
+The Android engine tests write <out>/android-export.zip; check it with --export-name android-export.zip.
 restores it in the desktop app and requires the same snapshot again (iPhone -> desktop direction).
 
 The Swift checks (ios/AirZeloKit, `swift run AirZeloChecks --parity <out>`) then
@@ -458,18 +459,18 @@ def money_vectors():
     return {"parse": out, "calc": calc}
 
 
-def check_export(out):
-    """Restore the iPhone's export in the desktop app and compare every figure with the fixture."""
+def check_export(out, name="iphone-export.zip"):
+    """Restore a phone's export (iPhone or Android) in the desktop app and compare every figure with the fixture."""
     fixture = json.loads((out / "fixture.json").read_text(encoding="utf-8"))
     tmp = Path(tempfile.mkdtemp(prefix="az-export-"))
     try:
         ctx = Context(tmp / "agency")
         ctx.init()
-        v = backup.verify_backup(out / "iphone-export.zip")
+        v = backup.verify_backup(out / name)
         if not v["ok"]:
-            print("desktop rejected the iPhone export:", v["problems"])
+            print("desktop rejected the phone export %s:" % name, v["problems"])
             sys.exit(1)
-        backup.restore_backup(ctx, out / "iphone-export.zip")
+        backup.restore_backup(ctx, out / name)
         conn = db.connect(ctx.db_path)
         snap = json.loads(json.dumps(snapshot(conn), default=str, sort_keys=True))
         conn.close()
@@ -477,11 +478,11 @@ def check_export(out):
         diffs = []
         compare(snap, want, "", diffs)
         if diffs:
-            print("%d differences after the desktop restored the iPhone export:" % len(diffs))
+            print("%d differences after the desktop restored the phone export %s:" % (len(diffs), name))
             print("\n".join(diffs[:25]))
             sys.exit(1)
-        print("desktop restored the iPhone export (manifest %s, schema %s) and reproduced all %d bookings and every report"
-              % (v["manifest"].get("app_version"), v["manifest"].get("schema_version"), len(want["bookings"])))
+        print("desktop restored the phone export %s (manifest %s, schema %s) and reproduced all %d bookings and every report"
+              % (name, v["manifest"].get("app_version"), v["manifest"].get("schema_version"), len(want["bookings"])))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -507,12 +508,13 @@ def compare(got, want, path, out):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check-export", metavar="DIR")
+    ap.add_argument("--export-name", default="iphone-export.zip", help="file in DIR to check (android-export.zip for Android)")
     ap.add_argument("--out")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--ops", type=int, default=400)
     a = ap.parse_args()
     if a.check_export:
-        check_export(Path(a.check_export))
+        check_export(Path(a.check_export), a.export_name)
         return
     if not a.out:
         ap.error("--out is required")
