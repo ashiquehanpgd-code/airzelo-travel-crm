@@ -54,14 +54,14 @@ class AndroidSqlDb private constructor(override val path: String, private val db
 
     private fun <T> wrap(sql: String, body: () -> T): T = try { body() } catch (e: SQLiteException) { throw translate(e, sql) }
 
-    override fun exec(sql: String) = wrap(sql) {
+    override fun exec(sql: String): Unit = wrap(sql) {
         val head = sql.trimStart().uppercase()
         when {
             head.startsWith("BEGIN") -> db.beginTransaction()
             head.startsWith("COMMIT") || head.startsWith("END") -> { db.setTransactionSuccessful(); db.endTransaction() }
             head.startsWith("ROLLBACK") && !head.startsWith("ROLLBACK TO") -> db.endTransaction()
             // some PRAGMAs answer with a row (secure_delete, journal_mode ...), which execSQL refuses
-            head.startsWith("PRAGMA") -> db.rawQuery(sql, null).use { it.moveToFirst() }
+            head.startsWith("PRAGMA") -> { db.rawQuery(sql, null).use { it.moveToFirst() } }
             else -> db.execSQL(sql)
         }
     }
