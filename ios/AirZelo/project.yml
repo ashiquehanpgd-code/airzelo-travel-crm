@@ -53,7 +53,7 @@ targets:
       path: Generated/AirZelo.entitlements
       properties:
         # the app's own Keychain group: holds the device key for field encryption and device backups
-        keychain-access-groups: ["$(AppIdentifierPrefix)com.airzelo.crm.ios"]
+        keychain-access-groups: ["$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)"]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.airzelo.crm.ios
