@@ -12,7 +12,8 @@ struct AirZeloApp: App {
                 .environmentObject(model)
                 .task { model.start() }
         }
-        .onChange(of: phase) { _, newPhase in model.phaseChanged(newPhase) }
+        // initial: true, so the cover state always follows the real phase, including the one the app starts in
+        .onChange(of: phase, initial: true) { _, newPhase in model.phaseChanged(newPhase) }
     }
 }
 
@@ -27,6 +28,11 @@ final class AppModel: ObservableObject {
     @Published var corrupted = false
     @Published var revision = 0
     @Published var passcodeMissing = false
+
+    init() {
+        // UI tests start unlocked from the first frame, so no authentication prompt is ever started for them
+        locked = !uiTesting
+    }
 
     /// UI tests start unlocked with throwaway books (DEBUG builds only).
     var uiTesting: Bool {
@@ -125,7 +131,8 @@ struct RootView: View {
                 ProgressView("Opening your books…")
             }
             if model.hidden && !model.locked {
-                PrivacyCover()
+                // shown only while the app is not active (app switcher snapshot); it never takes taps
+                PrivacyCover().allowsHitTesting(false)
             }
         }
     }

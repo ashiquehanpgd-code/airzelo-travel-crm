@@ -37,6 +37,7 @@ struct LockView: View {
     }
 
     func unlock() {
+        if model.uiTesting { model.locked = false; return }
         let ctx = LAContext()
         ctx.localizedFallbackTitle = "Use passcode"
         var err: NSError?
