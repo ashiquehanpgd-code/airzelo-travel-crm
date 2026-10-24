@@ -154,7 +154,7 @@ private fun Routes(model: AppModel, nav: NavHostController) {
 @Composable
 fun MoreScreen(nav: NavHostController) {
     Screen("More") { pad ->
-        LazyColumn(Modifier.padding(pad)) {
+        LazyColumn(Modifier.padding(pad).testTag("more-list")) {
             val items = listOf("reports" to "Reports", "invoices" to "Invoices & credit notes", "suppliers" to "Suppliers",
                 "accounts" to "Cash & bank accounts (cashbook)", "expenses" to "Expenses", "report/refunds" to "Refunds & cancellations",
                 "backup" to "Backup & restore", "settings" to "Company & documents", "online" to "Online features")

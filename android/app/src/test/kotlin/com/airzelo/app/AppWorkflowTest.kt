@@ -5,8 +5,8 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.printToString
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -39,7 +39,7 @@ import java.security.SecureRandom
  * passphrase export.
  */
 @RunWith(AndroidJUnit4::class)
-@Config(sdk = [34])
+@Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
 class AppWorkflowTest {
     @get:Rule val compose = createEmptyComposeRule()
     private lateinit var root: File
@@ -73,7 +73,6 @@ class AppWorkflowTest {
 
     @Test fun bookingPaymentEditBackupRestore() {
         compose.waitForIdle()
-        println(compose.onRoot().printToString(maxDepth = 6))
         assertNull("startup: " + onMain { it.startupProblem }, onMain { it.startupProblem })
         assertFalse("unlocked in tests", onMain { it.locked })
         assertTrue("books open", onMain { it.agency != null })
@@ -130,6 +129,7 @@ class AppWorkflowTest {
         // 4. device backup from the Backup screen, a change, then restore from the list
         compose.onNodeWithTag("back").performClick()
         compose.onNodeWithTag("tab-more").performClick()
+        compose.onNodeWithTag("more-list").performScrollToNode(hasTestTag("more-backup"))
         compose.onNodeWithTag("more-backup").performClick()
         click("backup-now")
         noProblem("back up now")
