@@ -64,6 +64,7 @@ class Row(val columns: List<String>, val values: List<SqlValue>) {
         get() = LinkedHashMap<String, JValue>().also { m -> columns.forEachIndexed { i, c -> if (!m.containsKey(c)) m[c] = JValue.fromSql(values[i]) } }
 }
 
+/** [message] is SQLite's own error text (for a trigger, its RAISE message), optionally followed by " in: " and the SQL. */
 class SqlException(val code: Int, message: String) : RuntimeException(message) {
     /** SQLITE_CONSTRAINT: a trigger refusal or a constraint (RAISE(ABORT, ...)). */
     val isConstraint get() = code == 19

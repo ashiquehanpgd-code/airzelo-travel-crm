@@ -119,7 +119,7 @@ class Agency(val db: SqlDb, val crypto: FieldCrypto) {
 
     /** Database trigger refusals ("Posted transactions cannot be deleted...") reach the user as validation messages. */
     private fun translate(e: Throwable): Throwable =
-        if (e is SqlException && e.isConstraint) AZError.validation(e.message!!.substringBefore(" in: ").substringAfter("[SQLITE_CONSTRAINT_TRIGGER] ").substringBefore(" (").trim()) else e
+        if (e is SqlException && e.isConstraint) AZError.validation(e.message!!.substringBefore(" in: ")) else e
 
     // ---- shared helpers
 
