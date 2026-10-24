@@ -41,7 +41,10 @@ This Mac cannot build or test Windows. `.github/workflows/build.yml` runs on `wi
 1. fetches `win-x64`;
 2. runs all core tests on the bundled Windows Python;
 3. builds the NSIS installer;
-4. smoke-tests `dist/win-unpacked` with its own runtime.
+4. smoke-tests `dist/win-unpacked` with its own runtime;
+5. installs the setup `.exe` silently for the current user, checks the version, Add/Remove Programs entry and desktop shortcut, runs the smoke and GUI tests on the installed app, then uninstalls it.
+
+On macOS, CI likewise copies `AirZelo.app` out of the DMG and the ZIP, checks the version and architecture, and runs the smoke and GUI tests on each copy.
 
 On Windows the ticket **reader** is not available yet (Stage 3: `Windows.Data.Pdf` + `Windows.Media.Ocr`). The scanner reports "not ready", and everything else works.
 
