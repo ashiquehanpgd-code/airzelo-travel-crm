@@ -13,6 +13,7 @@ import com.airzelo.engine.BackupCrypto
 import com.airzelo.engine.Fields
 import com.airzelo.engine.JValue
 import com.airzelo.engine.PdfFile
+import com.airzelo.engine.SqlException
 import com.airzelo.engine.Zip
 import java.io.File
 
@@ -150,6 +151,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             is AgencyStore.StoreError -> e.message ?: "The backup could not be used."
             is BackupCrypto.CryptoError -> e.message ?: "The backup could not be opened."
             is Zip.ZipError -> e.message ?: "The file is not a valid backup."
+            // SQLite's own text and the start of the statement; bound values (customer data) are never part of it
+            is SqlException -> "Database error: " + (e.message ?: "unknown")
             else -> "Something went wrong: ${e.javaClass.simpleName}"  // no details: they could include customer data
         }
     }

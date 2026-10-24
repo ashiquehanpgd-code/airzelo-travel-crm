@@ -60,6 +60,8 @@ class AndroidSqlDb private constructor(override val path: String, private val db
             head.startsWith("BEGIN") -> db.beginTransaction()
             head.startsWith("COMMIT") || head.startsWith("END") -> { db.setTransactionSuccessful(); db.endTransaction() }
             head.startsWith("ROLLBACK") && !head.startsWith("ROLLBACK TO") -> db.endTransaction()
+            // some PRAGMAs answer with a row (secure_delete, journal_mode ...), which execSQL refuses
+            head.startsWith("PRAGMA") -> db.rawQuery(sql, null).use { it.moveToFirst() }
             else -> db.execSQL(sql)
         }
     }
