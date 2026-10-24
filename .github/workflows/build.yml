@@ -89,6 +89,66 @@ jobs:
         shell: bash
         run: node build/e2e_gui.mjs "${{ matrix.exe }}"
 
+      # The steps above test the unpacked build. These test the files users actually download.
+      - name: Install from the DMG and the ZIP, check version and architecture, test the installed app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./desktop/package.json').version")
+          arch=${{ matrix.name == 'mac-arm64' && 'arm64' || 'x86_64' }}
+          tag=${{ matrix.name == 'mac-arm64' && 'arm64' || 'x64' }}
+          dmg="dist/AirZelo-$version-mac-$tag.dmg"; zip="dist/AirZelo-$version-mac-$tag.zip"
+          ls -l "$dmg" "$zip"
+          check() {
+            plist="$1/Contents/Info.plist"
+            got=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist")
+            [ "$got" = "$version" ] || { echo "version $got, expected $version"; exit 1; }
+            archs=$(lipo -archs "$1/Contents/MacOS/AirZelo")
+            [ "$archs" = "$arch" ] || { echo "architecture $archs, expected $arch"; exit 1; }
+            echo "$1: version $got, architecture $archs"
+            python build/smoke_test.py --app "$1"
+            node build/e2e_gui.mjs "$1/Contents/MacOS/AirZelo"
+          }
+          mnt="$RUNNER_TEMP/dmg"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg"
+          [ -L "$mnt/Applications" ] || { echo "DMG has no Applications link"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/from-dmg"
+          ditto "$mnt/AirZelo.app" "$RUNNER_TEMP/from-dmg/AirZelo.app"
+          hdiutil detach "$mnt"
+          check "$RUNNER_TEMP/from-dmg/AirZelo.app"
+          ditto -x -k "$zip" "$RUNNER_TEMP/from-zip"
+          check "$RUNNER_TEMP/from-zip/AirZelo.app"
+
+      - name: Install with the setup.exe (silent, per user), test the installed app, uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = node -p "require('./desktop/package.json').version"
+          $setup = "dist\AirZelo-$version-win-x64-setup.exe"
+          Get-Item $setup | Format-List Name, Length
+          $dir = Join-Path $env:RUNNER_TEMP 'AirZelo-install'
+          $p = Start-Process $setup -ArgumentList '/S', "/D=$dir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
+          $exe = Join-Path $dir 'AirZelo.exe'
+          if (-not (Test-Path $exe)) { throw "AirZelo.exe not installed in $dir" }
+          $got = (Get-Item $exe).VersionInfo.ProductVersion
+          if ($got -ne $version) { throw "installed version $got, expected $version" }
+          $entry = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall | Get-ItemProperty | Where-Object DisplayName -like 'AirZelo*'
+          if (-not $entry) { throw 'no Add/Remove Programs entry' }
+          "installed: $exe, version $got, registered as '$($entry.DisplayName)' $($entry.DisplayVersion)"
+          $lnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'AirZelo.lnk'
+          if (-not (Test-Path $lnk)) { throw 'no desktop shortcut' }
+          python build/smoke_test.py --app $dir
+          if ($LASTEXITCODE -ne 0) { throw 'smoke test of the installed app failed' }
+          node build/e2e_gui.mjs $exe
+          if ($LASTEXITCODE -ne 0) { throw 'GUI test of the installed app failed' }
+          $u = Start-Process (Join-Path $dir 'Uninstall AirZelo.exe') -ArgumentList '/S' -Wait -PassThru
+          if ($u.ExitCode -ne 0) { throw "uninstaller exit code $($u.ExitCode)" }
+          for ($i = 0; $i -lt 60 -and (Test-Path $exe); $i++) { Start-Sleep 1 }
+          if (Test-Path $exe) { throw 'uninstall left AirZelo.exe behind' }
+          'uninstalled cleanly'
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: travel-agency-crm-${{ matrix.name }}
