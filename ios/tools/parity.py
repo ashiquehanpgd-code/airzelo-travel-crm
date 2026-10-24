@@ -10,6 +10,11 @@ core (core/server), then writes:
                         figures: per-booking calculations, period summaries, balances, every report,
                         statements, the dashboard, invoice documents and the database tables
   <out>/desktop.db    - the desktop database those operations produced
+  <out>/desktop-backup.zip - the same books as a real desktop backup (for the iPhone import check)
+
+The iPhone check writes <out>/iphone-export.zip (a portable export of the replayed books); then
+  python3 ios/tools/parity.py --check-export <out>
+restores it in the desktop app and requires the same snapshot again (iPhone -> desktop direction).
 
 The Swift checks (ios/AirZeloKit, `swift run AirZeloChecks --parity <out>`) then
   1. open desktop.db with the iPhone engine and must reproduce the snapshot exactly, and
@@ -29,7 +34,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "core"))
 
-from server import db, services, reports  # noqa: E402
+from server import db, services, reports, backup, money  # noqa: E402
+from server.web import Context  # noqa: E402
 from server.errors import ApiError  # noqa: E402
 from server.finance import Ledger, dashboard  # noqa: E402
 
@@ -426,25 +432,106 @@ def strip_party(st):
     return st
 
 
+MONEY_INPUTS = ["12000", "12000.5", "12,000.50", "₹ 1,500", " 99.99 ", "0", "0.00", "", "abc", "1e3", "1E-2", "12.345", "12.340",
+                 "-5", "-0", "100000000000", "100000000000.01", ".5", "5.", "+7", "nan", "inf", "1_000", 12000, 0, -3, 12.5, 0.1, 22.75,
+                 1e-05, 99.995, 1000000.0, True, None, "22.15", "21.9875", "0.04460000", "3.123456789", "1000000.5", "18", "4.5", "100.0001",
+                 "33.33333", "150"]
+
+
+def money_vectors():
+    out = []
+    for v in MONEY_INPUTS:
+        row = {"input": v}
+        for name, fn in (("amount", lambda x: money.parse_amount(x, "Amount")),
+                         ("amount_neg", lambda x: money.parse_amount(x, "Amount", allow_negative=True, allow_zero=False)),
+                         ("rate", lambda x: money.parse_rate(x, "Rate")), ("percent", lambda x: money.parse_percent(x, "Pct"))):
+            try:
+                row[name] = {"ok": fn(v)}
+            except ApiError as e:
+                row[name] = {"error": e.message}
+        out.append(row)
+    calc = []
+    for minor in (0, 1, 5, 99, 12345, 1050, -1050, 999999999, 10 ** 13):
+        for rate in ("1", "22.15", "21.9875", "0.0446", "3.12345678", "18", "4.5", "2.5", "0.5"):
+            calc.append({"minor": minor, "rate": rate, "convert": money.convert(minor, rate), "percent_of": money.percent_of(minor, rate),
+                         "split_half": list(money.split_half(minor)), "fmt": money.fmt(minor)})
+    return {"parse": out, "calc": calc}
+
+
+def check_export(out):
+    """Restore the iPhone's export in the desktop app and compare every figure with the fixture."""
+    fixture = json.loads((out / "fixture.json").read_text(encoding="utf-8"))
+    tmp = Path(tempfile.mkdtemp(prefix="az-export-"))
+    try:
+        ctx = Context(tmp / "agency")
+        ctx.init()
+        v = backup.verify_backup(out / "iphone-export.zip")
+        if not v["ok"]:
+            print("desktop rejected the iPhone export:", v["problems"])
+            sys.exit(1)
+        backup.restore_backup(ctx, out / "iphone-export.zip")
+        conn = db.connect(ctx.db_path)
+        snap = json.loads(json.dumps(snapshot(conn), default=str, sort_keys=True))
+        conn.close()
+        want = fixture["snapshot"]
+        diffs = []
+        compare(snap, want, "", diffs)
+        if diffs:
+            print("%d differences after the desktop restored the iPhone export:" % len(diffs))
+            print("\n".join(diffs[:25]))
+            sys.exit(1)
+        print("desktop restored the iPhone export (manifest %s, schema %s) and reproduced all %d bookings and every report"
+              % (v["manifest"].get("app_version"), v["manifest"].get("schema_version"), len(want["bookings"])))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def compare(got, want, path, out):
+    if isinstance(want, dict) and isinstance(got, dict):
+        for k in sorted(set(got) | set(want)):
+            if k not in got:
+                out.append("%s/%s missing" % (path, k))
+            elif k not in want:
+                out.append("%s/%s extra" % (path, k))
+            else:
+                compare(got[k], want[k], path + "/" + k, out)
+    elif isinstance(want, list) and isinstance(got, list):
+        if len(got) != len(want):
+            out.append("%s: %d vs %d items" % (path, len(got), len(want)))
+        for i, (g, w) in enumerate(zip(got, want)):
+            compare(g, w, "%s[%d]" % (path, i), out)
+    elif got != want:
+        out.append("%s: %r vs %r" % (path, got, want))
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--check-export", metavar="DIR")
+    ap.add_argument("--out")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--ops", type=int, default=400)
     a = ap.parse_args()
+    if a.check_export:
+        check_export(Path(a.check_export))
+        return
+    if not a.out:
+        ap.error("--out is required")
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix="az-parity-"))
     try:
-        conn = db.connect(tmp / "agency.db")
-        db.migrate(conn)
+        ctx = Context(tmp / "agency")
+        ctx.init()
+        conn = db.connect(ctx.db_path)
         sc = Scenario(conn, a.seed)
         sc.generate(a.ops)
         snap = snapshot(conn)
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         conn.close()
-        shutil.copy(tmp / "agency.db", out / "desktop.db")
-        fixture = {"seed": a.seed, "today": TODAY, "ops": sc.ops, "snapshot": snap}
+        shutil.copy(ctx.db_path, out / "desktop.db")
+        made = backup.create_backup(ctx, "manual", "parity fixture")
+        shutil.copy(ctx.backup_dir / made["name"], out / "desktop-backup.zip")
+        fixture = {"seed": a.seed, "today": TODAY, "ops": sc.ops, "snapshot": snap, "money": money_vectors()}
         (out / "fixture.json").write_text(json.dumps(fixture, default=str, sort_keys=True), encoding="utf-8")
         errors = sum(1 for o in sc.ops if "error" in o["outcome"])
         print("parity fixture: %d operations (%d refused), %d bookings, %d transactions -> %s" % (
