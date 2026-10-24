@@ -143,6 +143,61 @@ struct ISODateField: View {
     }
 }
 
+/// A picker with its label beside it (outside a Form a Picker shows only the selected value).
+struct LabeledPicker<Value: Hashable, Content: View>: View {
+    let title: String
+    @Binding var selection: Value
+    @ViewBuilder let content: Content
+    init(_ title: String, selection: Binding<Value>, @ViewBuilder content: () -> Content) {
+        self.title = title
+        _selection = selection
+        self.content = content()
+    }
+    var body: some View {
+        LabeledContent(title) {
+            Picker(title, selection: $selection) { content }.labelsHidden().pickerStyle(.menu)
+        }
+    }
+}
+
+extension View {
+    /// A "Done" button above the keyboard. The iPhone number pad has no return key, so without this the keyboard
+    /// could not be put away and kept covering the fields and buttons below it.
+    func keyboardDoneButton() -> some View {
+        toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { dismissKeyboard() }.accessibilityIdentifier("keyboard-done")
+            }
+        }
+    }
+}
+
+@MainActor func dismissKeyboard() {
+    #if os(iOS)
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    #endif
+}
+
+/// A titled group of fields for plain (non-lazy) forms.
+struct FormCard<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title.uppercased()).font(.caption.bold()).foregroundStyle(.secondary)
+            content
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background, in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
 // MARK: - errors and confirmations
 
 /// Shows service refusals with the desktop's wording, and offers "Save anyway" for the warnings the desktop

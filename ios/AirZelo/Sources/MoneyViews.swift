@@ -201,6 +201,7 @@ struct TransactionFormView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
+        .keyboardDoneButton()
         .navigationTitle(KIND_LABELS[kind] ?? "Entry")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

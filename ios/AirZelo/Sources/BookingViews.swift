@@ -283,9 +283,12 @@ struct BookingFormView: View {
     var base: String { model.agency?.baseCurrency ?? "INR" }
 
     var body: some View {
-        Form {
-            Section("Customer") {
-                Picker("Customer", selection: $customerId) {
+        // A plain (non-lazy) scroll view: every field always exists, so nothing is released while scrolling or hidden
+        // from VoiceOver / UI tests behind the keyboard, as happened with the lazy Form.
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+            FormCard("Customer") {
+                LabeledPicker("Customer", selection: $customerId) {
                     Text("New customer").tag(0)
                     ForEach(customers.indices, id: \.self) { i in Text(customers[i].str("name")).tag(customers[i].int("id")) }
                 }
@@ -294,22 +297,22 @@ struct BookingFormView: View {
                     TextField("Phone", text: $newCustomerPhone).phoneKeyboard()
                 }
             }
-            Section("Booking") {
-                Picker("Status", selection: $status) { ForEach(BOOKING_STATUSES, id: \.self) { Text(Fmt.label($0)).tag($0) } }
-                Picker("Service", selection: $serviceType) { ForEach(SERVICE_TYPES, id: \.self) { Text(Fmt.label($0)).tag($0) } }
-                Picker("Trip", selection: $tripType) {
+            FormCard("Booking") {
+                LabeledPicker("Status", selection: $status) { ForEach(BOOKING_STATUSES, id: \.self) { Text(Fmt.label($0)).tag($0) } }
+                LabeledPicker("Service", selection: $serviceType) { ForEach(SERVICE_TYPES, id: \.self) { Text(Fmt.label($0)).tag($0) } }
+                LabeledPicker("Trip", selection: $tripType) {
                     Text("One way").tag("one_way"); Text("Return").tag("round_trip"); Text("Multi-city").tag("multi_city")
                 }
                 TextField("PNR", text: $pnr).capitals().accessibilityIdentifier("pnr")
-                Picker("Supplier", selection: $supplierId) {
+                LabeledPicker("Supplier", selection: $supplierId) {
                     Text("None").tag(0)
                     ForEach(suppliers.indices, id: \.self) { i in Text(suppliers[i].str("name")).tag(suppliers[i].int("id")) }
                 }
                 ISODateField(label: "Booking date", iso: $bookingDate)
                 OptionalDateField(label: "Travel date", iso: $travelDate)
             }
-            Section("Prices") {
-                Picker("Currency", selection: $currency) {
+            FormCard("Prices") {
+                LabeledPicker("Currency", selection: $currency) {
                     ForEach(currencies.indices, id: \.self) { i in Text(currencies[i].str("code")).tag(currencies[i].str("code")) }
                 }
                 if currency != base { AmountField(label: "Rate (1 \(currency) in \(base))", text: $rate) }
@@ -318,20 +321,23 @@ struct BookingFormView: View {
                 AmountField(label: "Commission", text: $commission)
                 AmountField(label: "Service charge", text: $service)
                 AmountField(label: "Other income", text: $other)
-                Picker("Tax", selection: $taxProfileId) {
+                LabeledPicker("Tax", selection: $taxProfileId) {
                     Text("No tax").tag(0)
                     ForEach(taxProfiles.indices, id: \.self) { i in Text(taxProfiles[i].str("name")).tag(taxProfiles[i].int("id")) }
                 }
             }
-            Section("Passengers") {
+            FormCard("Passengers") {
                 ForEach($pax) { $p in
-                    VStack {
+                    VStack(spacing: 10) {
                         HStack {
                             TextField("Title", text: $p.title).capitals().frame(width: 60)
                             TextField("Passenger name", text: $p.name).accessibilityIdentifier("pax-name")
                         }
-                        Picker("Type", selection: $p.type) { Text("Adult").tag("ADT"); Text("Child").tag("CHD"); Text("Infant").tag("INF") }
+                        LabeledPicker("Type", selection: $p.type) { Text("Adult").tag("ADT"); Text("Child").tag("CHD"); Text("Infant").tag("INF") }
                         TextField("E-ticket number", text: $p.ticket).capitals()
+                        if pax.count > 1 {
+                            Button("Remove passenger", role: .destructive) { pax.removeAll { $0.id == p.id } }.font(.footnote)
+                        }
                         if FieldCrypto.isSealed(p.passport) {
                             Text("Passport: encrypted on another device (kept as is)").font(.caption).foregroundStyle(.secondary)
                         } else {
@@ -339,13 +345,12 @@ struct BookingFormView: View {
                         }
                     }
                 }
-                .onDelete { pax.remove(atOffsets: $0) }
                 Button("Add passenger") { pax.append(PaxDraft()) }
             }
-            Section("Flights") {
+            FormCard("Flights") {
                 ForEach($segs) { $s in
-                    VStack {
-                        Picker("Direction", selection: $s.direction) { Text("Onward").tag("outbound"); Text("Return").tag("return"); Text("Other").tag("other") }
+                    VStack(spacing: 10) {
+                        LabeledPicker("Direction", selection: $s.direction) { Text("Onward").tag("outbound"); Text("Return").tag("return"); Text("Other").tag("other") }
                         HStack { TextField("Airline", text: $s.airline); TextField("Flight no.", text: $s.flightNo).capitals() }
                         HStack { TextField("From (COK)", text: $s.origin).capitals(); TextField("To (DXB)", text: $s.destination).capitals() }
                         Toggle("Departure time", isOn: $s.hasDep)
@@ -353,13 +358,19 @@ struct BookingFormView: View {
                         Toggle("Arrival time", isOn: $s.hasArr)
                         if s.hasArr { DatePicker("Arrives", selection: $s.arr) }
                         HStack { TextField("Baggage", text: $s.baggage); TextField("Airline PNR", text: $s.airlinePnr).capitals() }
+                        Button("Remove flight", role: .destructive) { segs.removeAll { $0.id == s.id } }.font(.footnote)
                     }
                 }
-                .onDelete { segs.remove(atOffsets: $0) }
                 Button("Add flight") { segs.append(SegDraft()) }
             }
-            Section("Notes") { TextField("Notes", text: $notes, axis: .vertical) }
+            FormCard("Notes") { TextField("Notes", text: $notes, axis: .vertical) }
+            }
+            .padding()
+            .textFieldStyle(.roundedBorder)
         }
+        .scrollDismissesKeyboard(.interactively)
+        .keyboardDoneButton()
+        .background(Color.secondary.opacity(0.08))
         .navigationTitle(bookingId == nil ? "New booking" : "Edit booking")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -491,6 +502,7 @@ struct RefundFormView: View {
                 }
             }
         }
+        .keyboardDoneButton()
         .navigationTitle("Refund / cancel")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

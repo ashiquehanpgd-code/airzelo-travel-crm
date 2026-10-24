@@ -21,7 +21,8 @@ final class SmokeUITests: XCTestCase {
     func reveal(_ el: XCUIElement, in app: XCUIApplication, _ what: String) -> Bool {
         if el.waitForExistence(timeout: 3) && el.isHittable { return true }
         if !dumped.contains(what) { dumped.insert(what); diagnose("\(what) not visible yet", app) }
-        let scroller = app.collectionViews.firstMatch.exists ? app.collectionViews.firstMatch : app.scrollViews.firstMatch
+        // the booking form is a plain scroll view (in front); detail screens are lists (collection views)
+        let scroller = app.scrollViews.firstMatch.exists ? app.scrollViews.firstMatch : app.collectionViews.firstMatch
         for direction in ["up", "down"] {
             for _ in 0..<8 {
                 if el.exists && el.isHittable { return true }
@@ -36,11 +37,9 @@ final class SmokeUITests: XCTestCase {
     /// Like a user: put away the keyboard before moving on to the next field.
     func dismissKeyboard(_ app: XCUIApplication) {
         guard app.keyboards.firstMatch.exists else { return }
-        for key in ["return", "Return", "done", "Done"] where app.keyboards.buttons[key].exists {
-            app.keyboards.buttons[key].tap()
-            return
-        }
-        app.navigationBars.firstMatch.tap()  // decimal pad has no return key
+        let done = app.buttons["keyboard-done"]  // the app's Done button above the keyboard (number pads have no return key)
+        if done.exists { done.tap() } else if app.keyboards.buttons["return"].exists { app.keyboards.buttons["return"].tap() }
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3), "keyboard put away")
     }
 
     func type(_ id: String, _ text: String, in app: XCUIApplication) {
