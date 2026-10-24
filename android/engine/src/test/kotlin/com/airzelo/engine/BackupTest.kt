@@ -86,6 +86,8 @@ class BackupTest {
         a.createCustomer(f("name" to "Added After Backup"))
         val safety = t.store.restore(t.store.backupData(b))
         expectTrue(safety != null, "a safety backup of the replaced books is made")
+        expectEq(safety!!.kind, "pre-restore", "kind of the safety backup")
+        expectEq(t.store.listBackups().map { it.kind }.sorted(), listOf("manual", "pre-restore"))
         val restored = t.store.open()
         val diffs = Parity.diff(dump(restored), before)
         expectTrue(diffs.isEmpty(), "restored books equal the backed-up books: $diffs")

@@ -216,10 +216,11 @@ class AgencyStore(val root: File, private val deviceKey: ByteArray, private val 
 
     fun listBackups(): List<BackupInfo> {
         val names = backupDir.list()?.toList() ?: return emptyList()
+        // backup-<kind>-<yyyyMMdd>-<HHmmss>[-n].azbackup; kinds can contain "-" (pre-restore)
+        val pattern = Regex("""^backup-(.+?)-\d{8}-\d{6}(-\d+)?\.azbackup$""")
         return names.filter { it.startsWith("backup-") && it.endsWith(".azbackup") }.map { n ->
             val f = File(backupDir, n)
-            val parts = n.split("-")
-            BackupInfo(n, if (parts.size > 2) parts[1] else "manual", f.length(), f.lastModified())
+            BackupInfo(n, pattern.find(n)?.groupValues?.get(1) ?: "manual", f.length(), f.lastModified())
         }.sortedWith(compareByDescending<BackupInfo> { it.created }.thenByDescending { it.name })
     }
 
