@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The AirZelo plane mark (same outline as the desktop's pdfkit plane), centred in the adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,64 L72,40 C76,37.8 80,40.6 78,44.5 L74.5,51.5 L49,65.5 L40.5,79.5 L35,76.5 L37.5,65.5 Z" />
+    <path
+        android:fillColor="#35C9EA"
+        android:pathData="M28,70 L46,70 L44,74 L28,74 Z" />
+</vector>

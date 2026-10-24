@@ -53,3 +53,6 @@ android/**/build/
 android/local.properties
 *.jks
 *.keystore
+*.azbackup
+*.apk
+*.aab

@@ -1,0 +1,149 @@
+# Android app: test the offline engine against the desktop core, run the app's workflow test, and build an
+# installable release APK. Nothing here publishes a release or uploads anywhere but this run's artifacts.
+#
+# Signing:
+#   With the owner's approved repository secrets (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
+#   ANDROID_KEY_PASSWORD) the APK is signed with that permanent key:  AirZelo-<version>-android-signed.apk
+#   Without them, a throwaway key is made for this run only:            AirZelo-<version>-android-THROWAWAY-KEY.apk
+#   (it installs, but a later build cannot update it in place: uninstall it first, after exporting a backup).
+name: android
+
+on:
+  push:
+    branches: [main, "feature/android-offline-app"]
+    paths: ["android/**", "ios/tools/**", "core/server/**", ".github/workflows/android.yml"]
+  pull_request:
+    paths: ["android/**", "ios/tools/**", "core/server/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: engine + app tests, release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      HAS_SIGNING: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' }}
+      AZ_PARITY_DIR: ${{ github.workspace }}/../parity
+      AZ_REQUIRE_PARITY: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: "3.12" }
+
+      - name: JDK 17 and Android SDK (preinstalled on the runner)
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+          ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" | tail -6
+
+      - name: Android schema is the desktop schema
+        run: python ios/tools/export_schema.py --check
+
+      - name: Desktop parity fixture (seed 7, 600 operations)
+        run: python ios/tools/parity.py --out "$AZ_PARITY_DIR" --seed 7 --ops 600
+
+      - name: Signing key (permanent from secrets, otherwise a throwaway key for this run)
+        id: sign
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ks="$RUNNER_TEMP/signing.jks"
+          if [ "$HAS_SIGNING" = "true" ]; then
+            echo "$KS_B64" | base64 -d > "$ks"
+            echo "::add-mask::$KS_PASS"
+            { echo "AZ_SIGNING_STORE_PASSWORD=$KS_PASS"; echo "AZ_SIGNING_KEY_ALIAS=$KEY_ALIAS"; echo "AZ_SIGNING_KEY_PASSWORD=${KEY_PASS:-$KS_PASS}"; } >> "$GITHUB_ENV"
+            echo "kind=signed" >> "$GITHUB_OUTPUT"
+          else
+            pass="$(openssl rand -hex 24)"
+            echo "::add-mask::$pass"
+            keytool -genkeypair -noprompt -keystore "$ks" -storetype PKCS12 -storepass "$pass" -keypass "$pass" -alias throwaway \
+              -keyalg RSA -keysize 3072 -validity 400 -dname "CN=AirZelo throwaway build key ${GITHUB_RUN_ID}, O=Not for distribution"
+            { echo "AZ_SIGNING_STORE_PASSWORD=$pass"; echo "AZ_SIGNING_KEY_ALIAS=throwaway"; echo "AZ_SIGNING_KEY_PASSWORD=$pass"; } >> "$GITHUB_ENV"
+            echo "kind=THROWAWAY-KEY" >> "$GITHUB_OUTPUT"
+          fi
+          echo "AZ_SIGNING_STORE_FILE=$ks" >> "$GITHUB_ENV"
+
+      - name: Engine tests, app workflow test, release APK
+        working-directory: android
+        run: ./gradlew --no-daemon --stacktrace :engine:test :app:testReleaseUnitTest :app:assembleRelease
+
+      - name: Test counts (fails on any failed or skipped test, or if none ran)
+        if: always()
+        run: |
+          python - <<'EOF'
+          import glob, os, sys, xml.etree.ElementTree as ET
+          total = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
+          lines = []
+          for label, pattern in [("engine", "android/engine/build/test-results/test/*.xml"),
+                                 ("app", "android/app/build/test-results/testReleaseUnitTest/*.xml")]:
+              t = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
+              for f in glob.glob(pattern):
+                  s = ET.parse(f).getroot()
+                  for k in t: t[k] += int(s.get(k, 0))
+              for k in t: total[k] += t[k]
+              passed = t["tests"] - t["failures"] - t["errors"] - t["skipped"]
+              lines.append(f"| {label} | {t['tests']} | {passed} | {t['failures'] + t['errors']} | {t['skipped']} |")
+          passed = total["tests"] - total["failures"] - total["errors"] - total["skipped"]
+          lines.append(f"| **total** | **{total['tests']}** | **{passed}** | **{total['failures'] + total['errors']}** | **{total['skipped']}** |")
+          table = "| suite | tests | passed | failed | skipped |\n|---|---|---|---|---|\n" + "\n".join(lines)
+          print(table)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh: fh.write("## Android tests\n\n" + table + "\n")
+          if total["tests"] == 0 or total["failures"] or total["errors"] or total["skipped"]:
+              sys.exit("test run incomplete: every test must run and pass")
+          EOF
+
+      - name: Desktop restores the Android export and reproduces every figure
+        run: python ios/tools/parity.py --check-export "$AZ_PARITY_DIR" --export-name android-export.zip
+
+      - name: Package and verify the APK
+        id: pkg
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' android/app/build.gradle.kts)"
+          out="AirZelo-${version}-android-${{ steps.sign.outputs.kind }}.apk"
+          mkdir -p dist-android
+          cp android/app/build/outputs/apk/release/app-release.apk "dist-android/$out"
+          bt="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$bt/apksigner" verify --verbose --print-certs "dist-android/$out" | grep -E "Verified using|Signer #1 certificate DN|Number of signers"
+          perms="$("$bt/aapt2" dump permissions "dist-android/$out")"
+          echo "$perms"
+          if echo "$perms" | grep -q "android.permission.INTERNET"; then echo "the offline app must not request INTERNET"; exit 1; fi
+          "$bt/aapt2" dump badging "dist-android/$out" | grep -E "^package:|sdkVersion|targetSdkVersion"
+          ( cd dist-android && sha256sum "$out" > "$out.sha256" )
+          echo "apk=$out" >> "$GITHUB_OUTPUT"
+          {
+            echo "## APK"
+            echo ""
+            echo "\`$out\` ($(du -h "dist-android/$out" | cut -f1)), sha256 \`$(cut -d' ' -f1 "dist-android/$out.sha256")\`"
+            if [ "${{ steps.sign.outputs.kind }}" = "THROWAWAY-KEY" ]; then
+              echo ""
+              echo "Signed with a throwaway key made for this run: it installs, but a later build cannot update it in place."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.pkg.outputs.apk }}
+          path: dist-android/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Test reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-test-results
+          path: |
+            android/engine/build/test-results/
+            android/app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
