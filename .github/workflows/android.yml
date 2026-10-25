@@ -125,10 +125,10 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk "dist-android/$out"
           bt="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
           "$bt/apksigner" verify --verbose --print-certs "dist-android/$out" > apksigner.txt
-          grep -E "Verified using|Signer #1 certificate DN|Signer #1 certificate SHA-256|Number of signers" apksigner.txt
+          grep -E "Verified using|certificate DN|certificate SHA-256 digest|Number of signers" apksigner.txt
           if [ "${{ steps.sign.outputs.kind }}" = "signed" ]; then
             # the owner's permanent key (certificate SHA-256 is public; it is also in ~/AirZelo-signing/README.txt)
-            grep -q "Signer #1 certificate SHA-256 digest: $PERMANENT_CERT_SHA256" apksigner.txt || { echo "APK is not signed with the permanent key"; exit 1; }
+            grep -qE "^Signer.* certificate SHA-256 digest: $PERMANENT_CERT_SHA256$" apksigner.txt || { echo "APK is not signed with the permanent key"; exit 1; }
             echo "Signed with the permanent key (certificate SHA-256 $PERMANENT_CERT_SHA256)" >> "$GITHUB_STEP_SUMMARY"
           fi
           perms="$("$bt/aapt2" dump permissions "dist-android/$out")"
