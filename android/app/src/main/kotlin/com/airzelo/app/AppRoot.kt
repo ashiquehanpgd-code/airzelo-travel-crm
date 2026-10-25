@@ -57,7 +57,8 @@ fun AppRoot(model: AppModel, onUnlock: () -> Unit) {
     val problem = model.startupProblem
     when {
         problem != null -> StartupProblem(model, problem)
-        model.locked -> LockScreen(model, onUnlock)
+        model.lock.state == AppLock.State.NO_SCREEN_LOCK -> NoScreenLockScreen(onUnlock)
+        !model.lock.unlocked -> LockScreen(model, onUnlock)
         model.agency != null -> MainNav(model)
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     }
@@ -66,12 +67,37 @@ fun AppRoot(model: AppModel, onUnlock: () -> Unit) {
 
 @Composable
 fun LockScreen(model: AppModel, onUnlock: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+    Column(Modifier.fillMaxSize().padding(32.dp).testTag("lock-screen"), verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally) {
         Text("AirZelo", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Navy)
-        Text("Your agency's books are stored only on this phone.", color = Muted, textAlign = TextAlign.Center)
-        model.lockMessage?.let { Text(it, color = Bad, textAlign = TextAlign.Center) }
-        Button(onClick = onUnlock, modifier = Modifier.fillMaxWidth().testTag("unlock")) { Text("Unlock") }
+        Text("Your agency's books are stored only on this phone. Unlock with your fingerprint, face or screen lock.",
+            color = Muted, textAlign = TextAlign.Center)
+        model.lock.message?.let { Text(it, color = Bad, textAlign = TextAlign.Center, modifier = Modifier.testTag("lock-message")) }
+        Button(onClick = onUnlock, enabled = model.lock.state != AppLock.State.AUTHENTICATING,
+            modifier = Modifier.fillMaxWidth().testTag("unlock")) { Text("Unlock") }
+    }
+}
+
+/** No PIN, pattern or password on the phone: the books stay closed, and this explains how to set one. */
+@Composable
+fun NoScreenLockScreen(onCheckAgain: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    Column(Modifier.fillMaxSize().padding(28.dp).testTag("no-screen-lock"), verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically)) {
+        Text("Set up a screen lock", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Navy)
+        Text("AirZelo keeps your agency's books on this phone and opens them only after the phone confirms it is you. " +
+            "This phone has no screen lock, so anyone holding it could open them.")
+        Text("1. Open Settings > Security (or Security & privacy) > Screen lock.\n" +
+            "2. Choose PIN, Pattern or Password and set it.\n" +
+            "3. Optional: add your fingerprint or face in the same place.\n" +
+            "4. Come back here and tap Check again.")
+        Note("AirZelo never sees your PIN, pattern, password, fingerprint or face: Android checks them and only tells the app " +
+            "whether it is you.")
+        Button(onClick = {
+            MainActivity.expectingExternal = true
+            val intent = android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)
+            runCatching { ctx.startActivity(intent) }.onFailure { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS)) }
+        }, modifier = Modifier.fillMaxWidth().testTag("open-security-settings")) { Text("Open screen lock settings") }
+        androidx.compose.material3.OutlinedButton(onClick = onCheckAgain, modifier = Modifier.fillMaxWidth().testTag("check-again")) { Text("Check again") }
     }
 }
 
@@ -199,8 +225,6 @@ fun DashboardScreen(model: AppModel, nav: NavHostController) {
                     SegmentedButton(selected = period == k, onClick = { period = k }, shape = SegmentedButtonDefaults.itemShape(i, ps.size)) { Text(l) }
                 }
             }
-            if (model.passcodeMissing) Note("This phone has no screen lock, so anyone holding it can open your books. Set a PIN, pattern or " +
-                "password in Settings > Security.", Warn)
             if (dash == null) return@Page
             val s = dash.summary
             Section("Profit") {

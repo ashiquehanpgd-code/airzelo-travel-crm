@@ -21,6 +21,9 @@ import java.io.File
 object AppConfig {
     class Overrides(val root: File, val key: ByteArray, val skipLock: Boolean = true)
     @Volatile var overrides: Overrides? = null
+    /** Tests: a fake of Android's authentication and a controllable clock. */
+    @Volatile var deviceAuth: ((androidx.fragment.app.FragmentActivity) -> DeviceAuth)? = null
+    @Volatile var clock: (() -> Long)? = null
 }
 
 /**
@@ -28,9 +31,7 @@ object AppConfig {
  * All engine work happens on the main thread (one Agency, one thread), as in the iPhone app.
  */
 class AppModel(app: Application) : AndroidViewModel(app) {
-    var locked by mutableStateOf(true)
-    var passcodeMissing by mutableStateOf(false)
-    var lockMessage by mutableStateOf<String?>(null)
+    val lock = AppLock(AppConfig.clock ?: { android.os.SystemClock.elapsedRealtime() }, unlockedAtStart = AppConfig.overrides?.skipLock == true)
     var agency by mutableStateOf<Agency?>(null)
         private set
     var store: AgencyStore? = null
@@ -46,10 +47,6 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     var pdf by mutableStateOf<PdfFile?>(null)
 
     val skipLock: Boolean get() = AppConfig.overrides?.skipLock == true
-
-    init {
-        if (skipLock) locked = false
-    }
 
     fun start() {
         if (store != null) return
@@ -132,9 +129,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         false
     }
 
-    /** Leaving the app: lock it and make the automatic backup when it is due. */
+    /** Leaving the app: start the lock timeout and make the automatic backup when it is due. */
     fun onBackground() {
-        if (!skipLock) locked = true
+        if (!skipLock) lock.onBackground()
         runCatching { store?.autoBackupIfDue() }
     }
 

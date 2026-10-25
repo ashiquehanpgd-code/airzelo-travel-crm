@@ -74,7 +74,7 @@ class AppWorkflowTest {
     @Test fun bookingPaymentEditBackupRestore() {
         compose.waitForIdle()
         assertNull("startup: " + onMain { it.startupProblem }, onMain { it.startupProblem })
-        assertFalse("unlocked in tests", onMain { it.locked })
+        assertTrue("unlocked in tests", onMain { it.lock.unlocked })
         assertTrue("books open", onMain { it.agency != null })
 
         // 1. a booking with a new customer, a passenger (passport encrypted) and a flight

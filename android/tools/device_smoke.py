@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Smoke test of a built APK on a real Android system (an emulator in CI): install, launch, open every tab, make a
-backup (Android Keystore key + SQLite + backup encryption), open a report, then force-stop and relaunch so the
-existing books are reopened. Fails on any crash of the app.
+"""Smoke test of a built APK on a real Android system (an emulator in CI). The app lock is checked with Android's own
+prompt and a real device PIN: without a screen lock the app only shows setup instructions; after a PIN is set, a wrong
+PIN is refused and the right one opens the books; a short trip to the home screen keeps it open, a longer one (over
+the 30 s privacy timeout) and a restart lock it again. Then every tab, a backup (Android Keystore key + SQLite +
+backup encryption) and a report. Fails on any crash of the app.
 
     python3 android/tools/device_smoke.py path/to/app.apk
 
@@ -35,7 +37,8 @@ def nodes():
         b = re.findall(r"\d+", n.get("bounds", ""))
         if len(b) == 4:
             x1, y1, x2, y2 = map(int, b)
-            out.append({"text": n.get("text", ""), "desc": n.get("content-desc", ""), "x": (x1 + x2) // 2, "y": (y1 + y2) // 2})
+            out.append({"text": n.get("text", ""), "desc": n.get("content-desc", ""), "x": (x1 + x2) // 2, "y": (y1 + y2) // 2,
+                        "cls": n.get("class", ""), "pkg": n.get("package", "")})
     return out
 
 
@@ -72,31 +75,99 @@ def launch():
     adb("shell", "am", "start", "-W", "-n", f"{PKG}/.MainActivity")
 
 
+PIN = "1234"           # a test PIN on the throwaway emulator only
+LOCK_TIMEOUT_S = 30    # AppLock.DEFAULT_TIMEOUT_MS
+
+
+def credential_field(timeout=45):
+    """Waits for Android's own PIN entry (BiometricPrompt's device-credential screen, outside the app)."""
+    end = time.time() + timeout
+    while time.time() < end:
+        if crashed():
+            raise SystemExit("the app crashed:\n" + adb("logcat", "-d", "-b", "crash", check=False)[-4000:])
+        fields = [n for n in nodes() if n["cls"].endswith("EditText") and n["pkg"] != PKG]
+        if fields:
+            return fields[0]
+        time.sleep(1.5)
+    raise SystemExit("Android's PIN screen did not appear. On screen: " + " | ".join(n["text"] or n["desc"] for n in nodes() if n["text"] or n["desc"]))
+
+
+def enter_pin(pin):
+    f = credential_field()
+    adb("shell", "input", "tap", str(f["x"]), str(f["y"]))
+    adb("shell", "input", "text", pin)
+    adb("shell", "input", "keyevent", "KEYCODE_ENTER")
+    time.sleep(3)
+
+
+def books_visible():
+    return any(n["text"] == "Net sales (ex tax)" for n in nodes())
+
+
 def main(apk):
     adb("install", "-r", apk)
+    adb("shell", "locksettings", "clear", "--old", PIN, check=False)
+    adb("shell", "svc", "power", "stayon", "true", check=False)
     adb("logcat", "-c", "-b", "all", check=False)
+
+    # 1. no screen lock: setup instructions only, the books stay closed
     launch()
+    wait_for("Set up a screen lock")
+    assert not books_visible(), "books shown without a screen lock"
+    print("no screen lock: setup instructions shown, books closed")
+
+    # 2. the owner sets a PIN; Android's prompt refuses a wrong PIN and accepts the right one
+    adb("shell", "locksettings", "set-pin", PIN)
+    tap("Check again")
+    enter_pin("0000")
+    if books_visible():
+        raise SystemExit("a wrong PIN opened the books")
+    credential_field()  # still asking
+    print("wrong PIN refused")
+    enter_pin(PIN)
     wait_for("Net sales (ex tax)")
-    print("dashboard shown")
+    print("device PIN accepted: dashboard shown")
+
+    # 3. every tab, a backup and a report
     for tab in ["Bookings", "Customers", "Money", "More"]:
         tap(tab, bottom=True)
     tap("Backup & restore")
     tap("Back up now")
-    hits = wait_for_prefix("Backup saved and verified")
-    print("backup:", hits)
+    print("backup:", wait_for_prefix("Backup saved and verified"))
     adb("shell", "input", "keyevent", "KEYCODE_BACK")
     time.sleep(1)
     tap("Reports")
     tap("Profit")
     wait_for("Profit report")
     print("profit report shown")
+
+    # 4. a short trip to the home screen keeps the app open
+    adb("shell", "input", "keyevent", "KEYCODE_HOME")
+    time.sleep(5)
+    launch()
+    wait_for("Profit report")
+    if [n for n in nodes() if n["cls"].endswith("EditText") and n["pkg"] != PKG]:
+        raise SystemExit("asked for the PIN again after 5 s away")
+    print("back within the timeout: still unlocked")
+
+    # 5. longer than the privacy timeout: locked again, the PIN is asked for
+    adb("shell", "input", "keyevent", "KEYCODE_HOME")
+    time.sleep(LOCK_TIMEOUT_S + 8)
+    launch()
+    enter_pin(PIN)
+    wait_for("Profit report")
+    print("away longer than the timeout: locked, PIN asked, unlocked")
+
+    # 6. restart: the books are reopened, after the PIN again
     adb("shell", "am", "force-stop", PKG)
     time.sleep(1)
     launch()
+    enter_pin(PIN)
     wait_for("Net sales (ex tax)")
-    print("relaunched: existing books reopened")
+    print("restarted: PIN asked, existing books reopened")
     if crashed():
         raise SystemExit("the app crashed")
+    adb("shell", "locksettings", "clear", "--old", PIN, check=False)
     print("device smoke test passed")
 
 
