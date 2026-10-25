@@ -1,7 +1,11 @@
 package com.airzelo.app
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
@@ -57,14 +61,31 @@ import com.airzelo.engine.dashboard
 @Composable
 fun AppRoot(model: AppModel, onUnlock: () -> Unit) {
     val problem = model.startupProblem
-    when {
-        problem != null -> StartupProblem(model, problem)
-        model.lock.state == AppLock.State.NO_SCREEN_LOCK -> NoScreenLockScreen(onUnlock)
-        !model.lock.unlocked -> LockScreen(model, onUnlock)
-        model.agency != null -> MainNav(model)
-        else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    val unlocked = model.lock.unlocked
+    // the screens are built only after the first unlock, and then kept while the app re-locks, so unlocking returns to
+    // the same screen with any half-filled form intact; while locked they are not drawn and not readable by accessibility
+    var opened by rememberSaveable { mutableStateOf(false) }
+    if (unlocked) opened = true
+    Box(Modifier.fillMaxSize()) {
+        if (problem == null && opened && model.agency != null) {
+            Box(if (unlocked) Modifier.fillMaxSize() else Modifier.fillMaxSize().alpha(0f).clearAndSetSemantics {}) { MainNav(model) }
+        }
+        when {
+            problem != null -> StartupProblem(model, problem)
+            model.lock.state == AppLock.State.NO_SCREEN_LOCK -> Cover { NoScreenLockScreen(onUnlock) }
+            !unlocked -> Cover { LockScreen(model, onUnlock) }
+            model.agency == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        }
     }
     ProblemDialog(model)
+}
+
+/** An opaque layer that takes every touch, so nothing underneath can be reached while the app is locked. */
+@Composable
+private fun Cover(content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.White).pointerInput(Unit) {
+        awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+    }) { content() }
 }
 
 @Composable
