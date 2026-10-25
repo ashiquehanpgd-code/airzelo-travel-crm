@@ -17,6 +17,24 @@ with every figure, device smoke test passed on API 30 and 34, APK signer certifi
 `fbadc32d97ac95c238d0cf46e01a696dd63c2795a186048e4f1121fecd5ac098` (checked by CI), no INTERNET permission. The signed
 App Bundle `AirZelo-0.3.0-android-signed.aab` is a workflow artifact of those runs (30 days), not public.
 
+## App lock (since commit `8de1089`, after the 0.3.0 release; not yet in a published APK)
+
+- `AppLock.kt`: `AppLock` (state machine: LOCKED / AUTHENTICATING / NO_SCREEN_LOCK / UNLOCKED) and `DeviceAuth`
+  (`BiometricDeviceAuth`: AndroidX BiometricPrompt with `BIOMETRIC_STRONG | DEVICE_CREDENTIAL`, or `DEVICE_CREDENTIAL`
+  alone when no strong biometric is enrolled; both supported from API 30, the minSdk). The app never sees the PIN,
+  pattern, password or biometrics; no app PIN.
+- No screen lock (`KeyguardManager.isDeviceSecure` false): the books stay closed; the screen explains how to set a lock,
+  opens Settings > Security and has "Check again". (0.3.0 opened with a warning instead.)
+- Re-locks after **30 s** away from the screen (`AppLock.DEFAULT_TIMEOUT_MS`) or after a restart; the app's own file
+  picker, share sheet and Settings trips do not count. A failed or cancelled prompt waits for "Unlock" (no prompt loop).
+  The screens stay alive under an opaque lock layer, so unlocking returns to the same screen and keeps unsaved form
+  input; while locked they are neither drawn nor exposed to accessibility. FLAG_SECURE unchanged.
+- Tests: `AppLockTest` (6, Robolectric: success, failure + cancel, 30 s timeout, credential fallback, no screen lock,
+  FLAG_SECURE) and, on Android 11 + 14 emulators with a real device PIN set by `locksettings`: setup screen without a
+  lock, wrong PIN refused, right PIN accepted, 5 s away stays open, >30 s away locks (same screen after unlock),
+  restart asks again. CI [#40162713701](https://github.com/ashiquehanpgd-code/airzelo-travel-crm/actions/runs/40162713701):
+  **39 tests, 39 passed, 0 failed, 0 skipped**.
+
 ## Signing key
 
 - Permanent key created 2026-10-25 on the owner's Mac in `~/AirZelo-signing/` (folder `700`, files `600`, outside the
