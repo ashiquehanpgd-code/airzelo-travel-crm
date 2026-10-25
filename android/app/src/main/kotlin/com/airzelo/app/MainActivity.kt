@@ -16,6 +16,7 @@ import com.airzelo.app.ui.AirZeloTheme
  * The app opens only after Android confirms the phone's owner (fingerprint, face, or the phone's PIN, pattern or
  * password, through BiometricPrompt) and locks again after [AppLock.DEFAULT_TIMEOUT_MS] away from the screen.
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 class MainActivity : FragmentActivity() {
     private val model: AppModel by viewModels()
     private val auth: DeviceAuth by lazy { AppConfig.deviceAuth?.invoke(this) ?: BiometricDeviceAuth(this) }

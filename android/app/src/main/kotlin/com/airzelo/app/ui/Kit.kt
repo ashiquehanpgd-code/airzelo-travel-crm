@@ -195,8 +195,8 @@ fun LabeledValue(label: String, value: String, icon: ImageVector? = null) {
 
 /** A list row: leading avatar / icon, title and subtitle, trailing content, optional chevron feel via ripple. */
 @Composable
-fun ListRow(title: String, subtitle: String = "", onClick: (() -> Unit)? = null, tag: String? = null,
-            leading: (@Composable () -> Unit)? = null, trailing: (@Composable ColumnScope.() -> Unit)? = null, meta: String = "") {
+fun ListRow(title: String, subtitle: String = "", onClick: (() -> Unit)? = null, tag: String? = null, meta: String = "",
+            leading: (@Composable () -> Unit)? = null, trailing: (@Composable ColumnScope.() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().heightIn(min = 60.dp).let { if (onClick != null) it.clickable(role = Role.Button, onClick = onClick) else it }
         .tag(tag).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         if (leading != null) { leading(); Spacer(Modifier.width(12.dp)) }
@@ -214,8 +214,8 @@ fun ListRow(title: String, subtitle: String = "", onClick: (() -> Unit)? = null,
 // ---- states
 
 @Composable
-fun EmptyState(icon: ImageVector = Icons.Rounded.Inbox, title: String, body: String = "", action: String? = null, onAction: (() -> Unit)? = null,
-               modifier: Modifier = Modifier) {
+fun EmptyState(icon: ImageVector = Icons.Rounded.Inbox, title: String, body: String = "", action: String? = null, modifier: Modifier = Modifier,
+               onAction: (() -> Unit)? = null) {
     Column(modifier.fillMaxWidth().padding(vertical = 28.dp, horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         IconChip(icon, Tone.Gray, 52.dp)
