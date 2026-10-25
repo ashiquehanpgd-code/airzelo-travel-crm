@@ -66,6 +66,7 @@ fun BackupScreen(model: AppModel, onBack: () -> Unit) {
 
     Screen("Backup & restore", onBack) { pad ->
         Page(pad, "backup") {
+            message?.let { Text(it, color = Good, fontWeight = FontWeight.Bold, modifier = Modifier.testTag("backup-message")) }
             Section(footer = "Backups on this phone are encrypted with this device's key. An automatic backup runs when you leave the app " +
                 "(every ${model.agency?.setting("auto_backup_hours", "24") ?: "24"} hours; change it in Company & documents).") {
                 Button(onClick = { model.backupNow()?.let { message = "Backup saved and verified (${size(it.size)})." } },
@@ -86,7 +87,6 @@ fun BackupScreen(model: AppModel, onBack: () -> Unit) {
                     }
                 }
             }
-            message?.let { Text(it, color = Good, fontWeight = FontWeight.Bold, modifier = Modifier.testTag("backup-message")) }
         }
     }
 
