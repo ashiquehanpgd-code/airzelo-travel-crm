@@ -1,18 +1,19 @@
 # AirZelo for Android: progress and resume guide
 
-Status: **the app builds, is tested in CI and produces an installable release APK.** It has **not yet been tried on a
-real phone**: everything below was verified on the JVM, in Robolectric (Android's SQLite and the real activity) and by
-the Android build tools in CI.
+Status: **release-ready except for the owner's permanent signing key.** The app builds, all tests pass, and the
+release APK runs on real Android 11 and Android 14 systems (CI emulators). It has **not been tried on a physical
+phone**. Nothing is published yet: publishing waits for the owner (see "Release" below).
 
 Branch: `feature/android-offline-app`, created from `feature/ios-offline-app` so it can reuse the shared parity and
 schema tools in `ios/tools/`. Merging this branch would also bring in the iPhone work. Nothing has been merged into
-`main`, released or hosted.
+`main`, released or hosted, and nothing is on Google Play.
 
-Last verified CI run: [android #40140822102](https://github.com/ashiquehanpgd-code/airzelo-travel-crm/actions/runs/40140822102)
-(commit "Backups: read the kind correctly ..."): **33 tests, 33 passed, 0 failed, 0 skipped** (engine 30, app 3), the
-desktop restored the Android export and reproduced all 159 bookings and every report, and the APK artifact
-`AirZelo-0.3.0-android-THROWAWAY-KEY.apk` (7.8 MB) was uploaded. Artifacts are kept for 30 days; any push to
-`android/**` or a manual run (Actions > android > Run workflow) makes a new one.
+Last verified CI run: [android #40158356368](https://github.com/ashiquehanpgd-code/airzelo-travel-crm/actions/runs/40158356368)
+on commit `fbe8e10`: **33 tests, 33 passed, 0 failed, 0 skipped** (engine 30, app 3); the desktop restored the
+Android export and reproduced every figure; the release APK passed the device smoke test on Android 11 (API 30) and
+Android 14 (API 34) emulators; artifacts `AirZelo-0.3.0-android-THROWAWAY-KEY.apk` (7.8 MB) and
+`AirZelo-0.3.0-android-THROWAWAY-KEY.aab` (7.6 MB). These are test builds signed with a throwaway key: **not for
+public release.**
 
 ## Goal (from the owner's request)
 
@@ -139,9 +140,52 @@ was skipped, or none ran) -> `parity.py --check-export ... --export-name android
   outside the repository: losing them means users must uninstall to update. Never commit a keystore (`*.jks` and
   `*.keystore` are git-ignored).
 
+## Release (public download)
+
+Ready in the repository; waiting for the owner:
+
+- `.github/workflows/android.yml` (every push): tests, signed release APK **and App Bundle (.aab)**, and
+  `android/tools/device_smoke.py` on Android 11 and 14 emulators: install, launch, every tab, backup, report, then
+  force-stop and relaunch (existing books reopened). Fails on any crash or startup problem.
+- `.github/workflows/android-release.yml` (only for a tag `android-vX.Y.Z` matching `versionName`): runs the whole
+  build above, **refuses to publish unless the APK is signed with the permanent key**, creates a GitHub **pre-release**
+  (not "Latest", so the desktop's v0.2.1 stays the main download) with the APK and its `.sha256`, then downloads the
+  APK **without any login** and checks its SHA-256. The `.aab` stays a workflow artifact for a future Google Play
+  upload (not attached publicly). Release text: `docs/android-release-notes.md`.
+- The repository is public, so release downloads need no GitHub account.
+
+### Owner steps (the permanent key is the owner's; Claude never creates or sees it)
+
+1. Install a JDK for `keytool` (e.g. Temurin 17 from adoptium.net), then on the Mac, **outside the repository**:
+   ```bash
+   mkdir -p ~/AirZelo-signing && cd ~/AirZelo-signing
+   keytool -genkeypair -v -keystore airzelo-release.jks -storetype PKCS12 -alias airzelo -keyalg RSA -keysize 4096 \
+     -validity 10000 -dname "CN=ASHIQUE KALIPPADATH, O=AirZelo, C=IN"
+   ```
+   keytool asks for a password (use a long one; with PKCS12 the key password is the same).
+2. **Back it up before anything else**: the file `airzelo-release.jks` and its password in a password manager, plus a
+   second copy of the file on an encrypted USB drive kept offline. If the key is lost, no update can ever be
+   installed over the app again (users would have to uninstall, after exporting a backup). Never email it, never put
+   it in Git or a chat.
+3. Add the secrets (each `gh secret set` asks for the value; nothing is stored in shell history):
+   ```bash
+   base64 -i ~/AirZelo-signing/airzelo-release.jks | gh secret set ANDROID_KEYSTORE_BASE64 --repo ashiquehanpgd-code/airzelo-travel-crm
+   gh secret set ANDROID_KEYSTORE_PASSWORD --repo ashiquehanpgd-code/airzelo-travel-crm
+   gh secret set ANDROID_KEY_PASSWORD --repo ashiquehanpgd-code/airzelo-travel-crm
+   gh secret set ANDROID_KEY_ALIAS --body airzelo --repo ashiquehanpgd-code/airzelo-travel-crm
+   ```
+4. Publish (owner, or Claude with the owner's explicit go-ahead):
+   ```bash
+   git tag -a android-v0.3.0 -m "AirZelo for Android 0.3.0" && git push crm android-v0.3.0
+   ```
+   Then check Actions > android-release: it ends with "Public download verified: <url>".
+
+Decide before the first public release (permanent afterwards): the Android application ID is `com.airzelo.app`
+(the desktop's is `com.airzelo.crm`); the app name is `AirZelo` (as in `docs/RELEASE-IDENTITY.md`).
+
 ## Not done / known limits
 
-1. **Not tried on a real phone.** First on-device check: install, unlock (fingerprint and PIN), create a booking,
+1. **Not tried on a physical phone** (emulators only: no real fingerprint sensor, camera-less). First on-device check: install, unlock (fingerprint and PIN), create a booking,
    PDF share to WhatsApp, export a backup to Files, import it, leave and return (lock + auto backup).
 2. Android 11+ only (minSdk 30, see above). Supporting older phones would need a bundled SQLite (e.g.
    `androidx.sqlite:sqlite-bundled`) behind `SqlDb`.
