@@ -69,7 +69,15 @@ open class DesignTest {
     protected fun shot(name: String) {
         compose.waitForIdle()
         val dir = File("build/screenshots").also { it.mkdirs() }
-        val bmp = compose.onRoot().captureToImage().asAndroidBitmap()
+        val bmp = runCatching { compose.onRoot().captureToImage().asAndroidBitmap() }.getOrElse {
+            // fallback: draw the window in software
+            var b: Bitmap? = null
+            scenario.onActivity { act ->
+                val v = act.window.decorView
+                b = Bitmap.createBitmap(v.width, v.height, Bitmap.Config.ARGB_8888).also { bm -> v.draw(android.graphics.Canvas(bm)) }
+            }
+            b!!
+        }
         File(dir, "$shotPrefix-$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
@@ -179,7 +187,7 @@ class SmallPhoneDesignTest : DesignTest() { override val shotPrefix = "small" }
 
 /** Dark theme (follows the phone setting). */
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi-night")
+@Config(sdk = [34], qualifiers = "w411dp-h891dp-night-xxhdpi")
 class DarkDesignTest : DesignTest() { override val shotPrefix = "dark" }
 
 /** Realistic volume: 400 bookings with payments; lists, the dashboard and reports stay usable. */

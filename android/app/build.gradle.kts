@@ -54,7 +54,9 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
         unitTests.all {
-            it.maxHeapSize = "2g"
+            it.maxHeapSize = "3g"
+            // Robolectric renders Compose for the design-review screenshots (DesignTest)
+            it.systemProperty("robolectric.pixelCopyRenderMode", "hardware")
             it.testLogging { events("passed", "skipped", "failed"); showStandardStreams = true
                 exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
         }

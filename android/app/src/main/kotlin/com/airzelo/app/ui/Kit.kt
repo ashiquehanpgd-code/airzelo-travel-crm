@@ -103,9 +103,11 @@ enum class Tone { Gray, Blue, Green, Warn, Red, Violet, Cyan }
 fun AzCard(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, tag: String? = null, padding: Dp = 16.dp,
            content: @Composable ColumnScope.() -> Unit) {
     val c = Az.colors
-    Surface(onClick = onClick ?: {}, enabled = onClick != null, shape = Az.cardShape, color = c.surface,
-        border = BorderStroke(1.dp, c.border),
-        modifier = modifier.shadow(if (c.dark) 0.dp else 3.dp, Az.cardShape, ambientColor = c.navy.copy(alpha = 0.05f), spotColor = c.navy.copy(alpha = 0.08f)).tag(tag)) {
+    val m = modifier.shadow(if (c.dark) 0.dp else 3.dp, Az.cardShape, ambientColor = c.navy.copy(alpha = 0.05f), spotColor = c.navy.copy(alpha = 0.08f)).tag(tag)
+    // only a card with an action is a button (for TalkBack and touch); a plain card is just a surface
+    if (onClick != null) Surface(onClick = onClick, shape = Az.cardShape, color = c.surface, border = BorderStroke(1.dp, c.border), modifier = m) {
+        Column(Modifier.padding(padding), content = content)
+    } else Surface(shape = Az.cardShape, color = c.surface, border = BorderStroke(1.dp, c.border), modifier = m) {
         Column(Modifier.padding(padding), content = content)
     }
 }
