@@ -20,7 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalance
-import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Business
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Download
@@ -117,7 +117,7 @@ fun BackupScreen(model: AppModel, onBack: () -> Unit) {
             item(key = "device") {
                 AzCard(Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconChip(Icons.Rounded.Backup, Tone.Green); Spacer(Modifier.width(12.dp))
+                        IconChip(Icons.Rounded.Save, Tone.Green); Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text("Back up on this phone", style = MaterialTheme.typography.titleSmall, color = Az.colors.text)
                             Muted(if (hours == "0") "Automatic backups are off" else "Automatic backup when you leave the app, every $hours hours")
@@ -125,7 +125,7 @@ fun BackupScreen(model: AppModel, onBack: () -> Unit) {
                     }
                     Spacer(Modifier.height(12.dp))
                     PrimaryButton("Back up now", { model.backupNow()?.let { message = "Backup saved and verified (${size(it.size)})." } }, Modifier.fillMaxWidth(),
-                        Icons.Rounded.Backup, "backup-now")
+                        Icons.Rounded.Save, "backup-now")
                     Spacer(Modifier.height(8.dp))
                     Muted("Encrypted with this phone's key: it restores on this phone only. Use an export to move your books.")
                 }

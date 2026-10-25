@@ -240,9 +240,9 @@ fun CustomerDetailScreen(model: AppModel, nav: NavHostController, customerId: Lo
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 val debit = l["debit"].num != 0L
-                                Text(if (debit) "+" + fmt(l["debit"].num) else "−" + fmt(l["credit"].num), style = MaterialTheme.typography.labelLarge,
-                                    color = if (debit) c.text else c.success)
-                                Muted(fmt(l["balance"].num))
+                                Text(if (debit) "+" + com.airzelo.engine.indianGrouping(fmt(l["debit"].num)) else "−" + com.airzelo.engine.indianGrouping(fmt(l["credit"].num)),
+                                    style = MaterialTheme.typography.labelLarge, color = if (debit) c.text else c.success)
+                                Muted("Balance " + com.airzelo.engine.indianGrouping(fmt(l["balance"].num)))
                             }
                         }
                     }

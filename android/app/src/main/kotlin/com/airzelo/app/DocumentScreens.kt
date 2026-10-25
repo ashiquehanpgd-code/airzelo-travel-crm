@@ -76,6 +76,7 @@ import com.airzelo.app.ui.FigureRow
 import com.airzelo.app.ui.FilterRow
 import com.airzelo.app.ui.Fmt
 import com.airzelo.app.ui.IconChip
+import com.airzelo.app.ui.Labels
 import com.airzelo.app.ui.ListRow
 import com.airzelo.app.ui.LoadingState
 import com.airzelo.app.ui.Money
@@ -218,10 +219,20 @@ private fun ReportRowCard(row: Map<String, JValue>, r: Report) {
     val text = r.columns.filter { !it.isMoney }
     val money = r.columns.filter { it.isMoney }
     val c = Az.colors
+    // dates and statuses read as on the desktop: "13 May 2026", "Ticketed", "Part paid"
+    fun show(col: com.airzelo.engine.ReportColumn): String {
+        val v = row[col.key].text
+        return when (col.type) {
+            "date" -> if (v.isEmpty()) "" else Fmt.date(v)
+            "status" -> Labels.status[v] ?: Labels.pay[v] ?: v
+            "number" -> if (v.isEmpty()) "" else "$v ${col.label.lowercase()}"
+            else -> v
+        }
+    }
     AzCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp), padding = 14.dp) {
-        Text(text.take(3).map { row[it.key].text }.filter { it.isNotEmpty() }.joinToString(" · "), style = MaterialTheme.typography.titleSmall, color = c.text,
+        Text(text.take(3).map { show(it) }.filter { it.isNotEmpty() }.joinToString(" · "), style = MaterialTheme.typography.titleSmall, color = c.text,
             maxLines = 2, overflow = TextOverflow.Ellipsis)
-        if (text.size > 3) Muted(text.drop(3).map { row[it.key].text }.filter { it.isNotEmpty() }.joinToString(" · "), maxLines = 2)
+        if (text.size > 3) Muted(text.drop(3).map { show(it) }.filter { it.isNotEmpty() }.joinToString(" · "), maxLines = 2)
         val shown = money.mapNotNull { col -> row[col.key]?.long?.takeIf { it != 0L }?.let { col to it } }
         if (shown.isNotEmpty()) {
             HorizontalDivider(Modifier.padding(vertical = 8.dp), color = c.border)

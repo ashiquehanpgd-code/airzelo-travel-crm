@@ -71,6 +71,11 @@ def tap(label, bottom=False):
     print("tapped", label)
 
 
+def screen_size():
+    m = re.search(r"(\d+)x(\d+)", adb("shell", "wm", "size", check=False))
+    return (int(m.group(1)), int(m.group(2))) if m else (1080, 1920)
+
+
 def tap_tag(tag, swipes=5):
     """Taps the element with this test tag, scrolling down a little at a time until it is on screen."""
     for _ in range(swipes + 1):
@@ -80,7 +85,8 @@ def tap_tag(tag, swipes=5):
             time.sleep(1.5)
             print("tapped", tag)
             return
-        adb("shell", "input", "swipe", "540", "1500", "540", "700", "300")
+        w, h = screen_size()
+        adb("shell", "input", "swipe", str(w // 2), str(h * 7 // 10), str(w // 2), str(h * 3 // 10), "300")
         time.sleep(1)
     raise SystemExit(f"'{tag}' not found. On screen: " + " | ".join(n["text"] or n["rid"] for n in nodes() if n["text"] or n["rid"]))
 

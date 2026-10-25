@@ -85,7 +85,7 @@ jobs:
 
       - name: Engine tests, app workflow test, release APK and App Bundle
         working-directory: android
-        run: ./gradlew --no-daemon --stacktrace :engine:test :app:testReleaseUnitTest :app:assembleRelease :app:bundleRelease
+        run: ./gradlew --no-daemon --stacktrace :engine:test :app:testReleaseUnitTest :app:assembleRelease :app:bundleRelease :app:assembleDebug
 
       - name: Test counts (fails on any failed or skipped test, or if none ran)
         if: always()
@@ -168,6 +168,14 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Debug APK for emulator screenshots (internal; never released)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-debug-apk-NOT-FOR-RELEASE
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Screenshots for design review (synthetic demo books, Robolectric)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -217,3 +225,36 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: python3 android/tools/device_smoke.py "apk/${{ needs.build.outputs.apk }}"
+
+  device-screenshots:
+    name: design screenshots on Android 14 (emulator, demo books)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: android-debug-apk-NOT-FOR-RELEASE
+          path: debug-apk
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Walk the screens and take screenshots
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: python3 android/tools/device_screenshots.py debug-apk/app-debug.apk device-screenshots
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: android-emulator-screenshots
+          path: device-screenshots/
+          if-no-files-found: ignore
+          retention-days: 14

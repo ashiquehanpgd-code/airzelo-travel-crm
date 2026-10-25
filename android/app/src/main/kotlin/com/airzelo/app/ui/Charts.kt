@@ -83,7 +83,7 @@ fun RevenueChart(buckets: List<Map<String, JValue>>, currency: String, modifier:
             if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
         }
         drawPath(path, c.success, style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round))
-        gp.forEachIndexed { i, v -> if (n <= 31) drawCircle(c.success, 3.dp.toPx(), Offset(left + slot * i + slot / 2, y(v))) }
+        gp.forEachIndexed { i, v -> if (n <= 31 && v != 0L) drawCircle(c.success, 3.dp.toPx(), Offset(left + slot * i + slot / 2, y(v))) }
         // x labels: a few, evenly spaced
         val every = maxOf(1, n / 6)
         labels.forEachIndexed { i, l ->

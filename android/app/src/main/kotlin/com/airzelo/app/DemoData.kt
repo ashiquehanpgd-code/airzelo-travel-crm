@@ -39,7 +39,7 @@ object DemoData {
         }
         val today = LocalDate.parse(Dates.today())
         for (i in 0 until bookings) {
-            val day = today.minusDays(((bookings - i) * 5L) % 170)
+            val day = today.minusDays(3 + ((bookings - i) * 5L) % 170)
             val (o, d, airline) = routes[i % routes.size]
             val cost = 18000 + rnd.nextInt(0, 30) * 1000
             val sell = cost + 1500 + rnd.nextInt(0, 12) * 250

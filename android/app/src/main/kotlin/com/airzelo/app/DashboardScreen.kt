@@ -397,12 +397,16 @@ private class Kpi(val label: String, val value: Long?, val icon: ImageVector, va
 
 @Composable
 private fun KpiCard(k: Kpi, base: String, onClick: () -> Unit) {
-    AzCard(Modifier.width(184.dp).height(150.dp), onClick = onClick, tag = "kpi-${k.label}") {
+    AzCard(Modifier.width(184.dp).heightIn(min = 156.dp), onClick = onClick, tag = "kpi-${k.label}") {
         IconChip(k.icon, k.tone, 36.dp)
         Spacer(Modifier.height(10.dp))
         Text(k.label, style = MaterialTheme.typography.labelMedium, color = Az.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (k.count != null) Text(k.count, style = MaterialTheme.typography.titleLarge, color = Az.colors.text)
-        else Money(k.value ?: 0, base, MaterialTheme.typography.titleLarge, signed = k.signed)
+        else {
+            val v = k.value ?: 0
+            // long amounts step down a size so they fit the card on small phones
+            Money(v, base, if (Fmt.money(v, base).length > 13) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge, signed = k.signed)
+        }
         Muted(k.sub, maxLines = 2)
     }
 }

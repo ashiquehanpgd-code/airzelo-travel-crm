@@ -232,7 +232,7 @@ fun MainNav(model: AppModel) {
     val c = Az.colors
     Scaffold(containerColor = c.bg, contentWindowInsets = WindowInsets(0), bottomBar = {
         if (onTab) NavigationBar(containerColor = c.surface, tonalElevation = 0.dp) {
-            for (t in TABS) NavigationBarItem(selected = route == t.route, label = { Text(t.label, style = MaterialTheme.typography.labelMedium) },
+            for (t in TABS) NavigationBarItem(selected = route == t.route, label = { Text(t.label, style = MaterialTheme.typography.labelSmall.copy(letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified), maxLines = 1, softWrap = false) },
                 icon = { Icon(t.icon, t.label) }, modifier = Modifier.testTag("tab-${t.route}"),
                 colors = NavigationBarItemDefaults.colors(selectedIconColor = c.royal, selectedTextColor = c.royal, indicatorColor = c.royal50,
                     unselectedIconColor = c.muted, unselectedTextColor = c.muted),

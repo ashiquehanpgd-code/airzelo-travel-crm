@@ -285,9 +285,9 @@ fun <T> FilterRow(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> 
         items(options, key = { it.second }) { (v, label) ->
             FilterChip(selected = v == selected, onClick = { onSelect(v) }, label = { Text(label) }, shape = Az.pill,
                 modifier = Modifier.tag(tag?.let { "$it-$label" }),
-                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = c.navy, selectedLabelColor = Color.White,
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = if (c.dark) c.royal else c.navy, selectedLabelColor = Color.White,
                     containerColor = c.surface, labelColor = c.text2),
-                border = FilterChipDefaults.filterChipBorder(enabled = true, selected = v == selected, borderColor = c.border, selectedBorderColor = c.navy))
+                border = FilterChipDefaults.filterChipBorder(enabled = true, selected = v == selected, borderColor = c.border, selectedBorderColor = if (c.dark) c.royal else c.navy))
         }
     }
 }
