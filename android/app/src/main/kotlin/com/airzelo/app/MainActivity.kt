@@ -3,8 +3,13 @@ package com.airzelo.app
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.fragment.app.FragmentActivity
+import com.airzelo.app.ui.AirZeloTheme
 
 /**
  * The only activity. FLAG_SECURE keeps the books out of screenshots, screen recordings and the recent-apps preview.
@@ -18,13 +23,24 @@ class MainActivity : FragmentActivity() {
     companion object {
         /** Set while the app opens another app on purpose (file picker, share sheet, Settings), so that is not "leaving". */
         @Volatile var expectingExternal = false
+        /** Debug builds only: allow screenshots and load synthetic demo books (for design review on an emulator). */
+        const val EXTRA_DEMO = "com.airzelo.app.DEMO_SCREENSHOTS"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        enableEdgeToEdge()
+        val demo = BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_DEMO, false)
+        if (!demo) window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         model.start()
-        setContent { AirZeloTheme { AppRoot(model, onUnlock = { model.lock.requestUnlock(auth) }) } }
+        if (demo) model.agency?.let { if (it.db.scalarLong("SELECT COUNT(*) FROM bookings") == 0L) { DemoData.seed(it); model.changed() } }
+        setContent {
+            AirZeloTheme {
+                androidx.compose.foundation.layout.Box(Modifier.semantics { testTagsAsResourceId = true }) {
+                    AppRoot(model, onUnlock = { model.lock.requestUnlock(auth) })
+                }
+            }
+        }
     }
 
     override fun onResume() {

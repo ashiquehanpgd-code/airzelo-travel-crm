@@ -38,7 +38,7 @@ def nodes():
         if len(b) == 4:
             x1, y1, x2, y2 = map(int, b)
             out.append({"text": n.get("text", ""), "desc": n.get("content-desc", ""), "x": (x1 + x2) // 2, "y": (y1 + y2) // 2,
-                        "cls": n.get("class", ""), "pkg": n.get("package", "")})
+                        "cls": n.get("class", ""), "pkg": n.get("package", ""), "rid": n.get("resource-id", "")})
     return out
 
 
@@ -53,7 +53,7 @@ def wait_for(label, timeout=60):
         if crashed():
             raise SystemExit("the app crashed:\n" + adb("logcat", "-d", "-b", "crash", check=False)[-4000:])
         ns = nodes()
-        hits = [n for n in ns if label in (n["text"], n["desc"])]
+        hits = [n for n in ns if label in (n["text"], n["desc"], n["rid"])]
         if hits:
             return hits
         problem = [n["text"] for n in ns if "could not be opened" in n["text"] or n["text"].startswith("Something went wrong")]
@@ -69,6 +69,20 @@ def tap(label, bottom=False):
     adb("shell", "input", "tap", str(n["x"]), str(n["y"]))
     time.sleep(1.5)
     print("tapped", label)
+
+
+def tap_tag(tag, swipes=5):
+    """Taps the element with this test tag, scrolling down a little at a time until it is on screen."""
+    for _ in range(swipes + 1):
+        hits = [n for n in nodes() if n["rid"] == tag]
+        if hits:
+            adb("shell", "input", "tap", str(hits[0]["x"]), str(hits[0]["y"]))
+            time.sleep(1.5)
+            print("tapped", tag)
+            return
+        adb("shell", "input", "swipe", "540", "1500", "540", "700", "300")
+        time.sleep(1)
+    raise SystemExit(f"'{tag}' not found. On screen: " + " | ".join(n["text"] or n["rid"] for n in nodes() if n["text"] or n["rid"]))
 
 
 def launch():
@@ -101,7 +115,7 @@ def enter_pin(pin):
 
 
 def books_visible():
-    return any(n["text"] == "Net sales (ex tax)" for n in nodes())
+    return any(n["rid"] in ("dashboard-hero", "dashboard") for n in nodes())
 
 
 def main(apk):
@@ -125,19 +139,19 @@ def main(apk):
     credential_field()  # still asking
     print("wrong PIN refused")
     enter_pin(PIN)
-    wait_for("Net sales (ex tax)")
+    wait_for("dashboard-hero")
     print("device PIN accepted: dashboard shown")
 
     # 3. every tab, a backup and a report
-    for tab in ["Bookings", "Customers", "Money", "More"]:
-        tap(tab, bottom=True)
-    tap("Backup & restore")
-    tap("Back up now")
+    for tab in ["tab-bookings", "tab-customers", "tab-money", "tab-more"]:
+        tap_tag(tab)
+    tap_tag("more-backup")
+    tap_tag("backup-now")
     print("backup:", wait_for_prefix("Backup saved and verified"))
     adb("shell", "input", "keyevent", "KEYCODE_BACK")
     time.sleep(1)
-    tap("Reports")
-    tap("Profit")
+    tap_tag("more-reports")
+    tap_tag("report-profit")
     wait_for("Profit report")
     print("profit report shown")
 
@@ -163,7 +177,7 @@ def main(apk):
     time.sleep(1)
     launch()
     enter_pin(PIN)
-    wait_for("Net sales (ex tax)")
+    wait_for("dashboard-hero")
     print("restarted: PIN asked, existing books reopened")
     if crashed():
         raise SystemExit("the app crashed")

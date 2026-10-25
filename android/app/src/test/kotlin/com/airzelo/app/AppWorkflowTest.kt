@@ -137,7 +137,8 @@ class AppWorkflowTest {
         val backupName = onMain { it.store!!.listBackups().first().name }
         onMain { m -> m.agency!!.createCustomer(mapOf("name" to com.airzelo.engine.J("Added After Backup"))); m.changed() }
         assertEquals(1L, onMain { it.agency!!.db.scalarLong("SELECT COUNT(*) FROM customers WHERE name = 'Added After Backup'") })
-        click("backup-row-$backupName")
+        compose.onNodeWithTag("backup").performScrollToNode(hasTestTag("backup-row-$backupName"))
+        compose.onNodeWithTag("backup-row-$backupName").performClick()
         compose.onNodeWithTag("confirm").performClick()
         noProblem("restore device backup")
         assertEquals(0L, onMain { it.agency!!.db.scalarLong("SELECT COUNT(*) FROM customers WHERE name = 'Added After Backup'") })
