@@ -241,10 +241,14 @@ fun BookingDetailScreen(model: AppModel, nav: NavHostController, bookingId: Long
                             style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.7f))
                     }
                     Spacer(Modifier.height(14.dp))
-                    Row {
-                        HeroFigure("Billed", Fmt.money(cl.customerPayable - cl.customerCredits, base), Modifier.weight(1f))
-                        HeroFigure(if (cl.customerOutstanding >= 0) "Due" else "Due back", Fmt.money(Math.abs(cl.customerOutstanding), base), Modifier.weight(1f))
-                        HeroFigure("Profit", Fmt.money(cl.grossProfit, base), Modifier.weight(1f))
+                    androidx.compose.foundation.layout.BoxWithConstraints {
+                        // narrow phones show compact figures here; the exact amounts are in the cards below
+                        fun m(v: Long) = if (maxWidth < 360.dp) Fmt.compact(v, base) else Fmt.money(v, base)
+                        Row {
+                            HeroFigure("Billed", m(cl.customerPayable - cl.customerCredits), Modifier.weight(1f))
+                            HeroFigure(if (cl.customerOutstanding >= 0) "Due" else "Due back", m(Math.abs(cl.customerOutstanding)), Modifier.weight(1f))
+                            HeroFigure("Profit", m(cl.grossProfit), Modifier.weight(1f))
+                        }
                     }
                 }
             }
