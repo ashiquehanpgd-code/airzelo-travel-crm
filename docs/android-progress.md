@@ -1,6 +1,7 @@
 # AirZelo for Android: progress and resume guide
 
-Status: **published as a public pre-release, signed with the owner's permanent key.**
+Status: **0.3.0 published as a public pre-release (signed with the owner's permanent key). Since then, on the branch
+only: stronger app lock and a complete UI/UX redesign, both CI-verified and awaiting the owner's review (no new release).**
 <https://github.com/ashiquehanpgd-code/airzelo-travel-crm/releases/tag/android-v0.3.0>: `AirZelo-0.3.0-android-signed.apk`
 (21,753,573 bytes, SHA-256 `96645ecae50bb58b0225f862b59e1c073895aae8ddf62dc32f4baa28d98c2d15`), tag `android-v0.3.0` on
 commit `491c276`. Downloaded without any login (CI and this Mac): checksum matches. Marked pre-release, not "Latest"
@@ -16,6 +17,50 @@ Verified CI: [android-release #40160768107](https://github.com/ashiquehanpgd-cod
 with every figure, device smoke test passed on API 30 and 34, APK signer certificate SHA-256
 `fbadc32d97ac95c238d0cf46e01a696dd63c2795a186048e4f1121fecd5ac098` (checked by CI), no INTERNET permission. The signed
 App Bundle `AirZelo-0.3.0-android-signed.aab` is a workflow artifact of those runs (30 days), not public.
+
+## UI/UX redesign (on the branch; not yet in a published APK, awaiting the owner's review)
+
+Plan and design system: `docs/android-redesign.md`. Summary:
+- **Design system** (`app/.../ui/`): the desktop's palette and tokens (`core/static/app.css`) in light and dark themes
+  (`Theme.kt`); a component kit (`Kit.kt`: cards, hero cards, KPI tiles, list rows, status/payment pills with the
+  desktop's labels and colours, search, filter chips, form sections, date and date-time pickers, dropdowns, buttons,
+  empty/loading/error states, confirmation dialogs); Canvas charts (`Charts.kt`: revenue bars + gross-profit line,
+  profit breakdown bars, status distribution bars); formatting and labels (`Format.kt`).
+- **Dashboard** (`DashboardScreen.kt`): the desktop dashboard (`dashboard.js`) adapted to a phone, all from
+  `Ledger.dashboard`: greeting, period chips (today, week, month, FY, year, custom range), hero (net sales,
+  bookings, gross profit, margin), quick actions, the desktop's twelve KPIs as swipeable cards (each opens its report
+  or list), today / month / year cards, revenue & profit chart, profit breakdown with net profit and tax, booking and
+  payment status summary, pending payments, departures, follow-ups, recent bookings, cash & bank, recent transactions.
+- **Every screen restyled**: bookings (sticky month headers, status filter, booking cards), booking detail (hero, action
+  tiles, customer / supplier / profit cards, passengers, flight timeline, invoices, money, adjustments, collapsible
+  history), booking form (sectioned, date pickers, flights with date-time pickers), refund (with confirmation),
+  customers (sticky letter headers), customer profile (balance hero, statement with CSV), forms, suppliers, money
+  (entries grouped by day with sticky headers, money-in/out summary, type chips), entry detail, new entry, accounts,
+  More (grouped grid incl. new About & security), reports (grid of 13, filters, all rows lazily), invoices (type
+  filter), PDF viewer, backup & restore, settings (sectioned, proper keyboards), lock and no-screen-lock screens.
+- **Scrolling**: every list and long screen is a `LazyColumn` / `LazyRow` / `LazyVerticalGrid` with stable keys; forms
+  are single scroll columns (fields are never disposed); tab state (scroll, search, filters) is kept across tabs;
+  edge-to-edge with proper insets.
+- **Unchanged**: engine, database, backup format, security (Keystore, FLAG_SECURE in release, app lock), offline.
+  R8 shrinking is now on for release (to drop unused icons); app and engine classes are kept whole
+  (`app/proguard-rules.pro`), and the emulator smoke test runs the shrunk release APK.
+- **Demo data for review**: `DemoData.kt` (invented names, through the normal services) is loaded only by tests and by
+  debug builds started with `MainActivity.EXTRA_DEMO`, which also allows screenshots in that debug run only.
+- **Tests**: `DesignTest` (+ small phone 360x640, dark theme, and 400-booking volume variants): dashboard shows the
+  ledger's exact figures for two periods and scrolls to its last section, KPI cards swipe and open their reports, every
+  tab and every More entry opens, tab state is kept, every booking is reachable in the list, the booking form keeps
+  typed values while scrolling, the bookings report lists all 400 rows. Screenshots: Robolectric PNGs of 17 screens
+  in 4 variants (artifact `android-screenshots`) and real Android 14 emulator screenshots of the debug build with
+  demo books (artifact `android-emulator-screenshots`).
+- **Verified CI** [#40166581712](https://github.com/ashiquehanpgd-code/airzelo-travel-crm/actions/runs/40166581712) on
+  commit `1fad3cc`: **64 tests, 64 passed, 0 failed, 0 skipped** (engine 30, app 34); desktop restored the Android
+  export; the R8-shrunk release APK (permanent key) passed the device smoke test (real PIN prompt, every tab, backup,
+  report, timeout re-lock, restart) on Android 11 and 14 emulators; emulator screenshots taken on Android 14.
+- **Known limits of the redesign**: not yet seen on a physical phone; very narrow phones (320 dp) shorten the
+  "Customers" tab label and show compact figures in the booking hero; Android's own PIN screen cannot be screenshotted
+  (by design); the chart has no per-bar tap details; not designed for tablets beyond the adaptive grids. Screens still
+  not built (unchanged from before): debt register, bank reconciliation, tax-profile and currency editing.
+- **Not published**: no new APK release or tag until the owner approves the redesign.
 
 ## App lock (since commit `8de1089`, after the 0.3.0 release; not yet in a published APK)
 
