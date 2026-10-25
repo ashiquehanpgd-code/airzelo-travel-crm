@@ -165,7 +165,7 @@ fun sha256Hex(data: ByteArray): String = MessageDigest.getInstance("SHA-256").di
  */
 class AgencyStore(val root: File, private val deviceKey: ByteArray, private val factory: SqlDbFactory, val appVersion: String = APP_VERSION) {
     companion object {
-        const val APP_VERSION = "0.3.0-android"
+        const val APP_VERSION = "0.3.1-android"
         private val SEALED_COLUMNS = listOf("customers" to "passport_no", "booking_passengers" to "passport_no")
     }
 

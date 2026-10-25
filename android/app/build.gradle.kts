@@ -17,8 +17,8 @@ android {
         // the desktop's SQL uses upserts (ON CONFLICT ... DO UPDATE), which need SQLite 3.24+: Android 11 (API 30) ships 3.28
         minSdk = 30
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.3.1"
     }
 
     signingConfigs {
