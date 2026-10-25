@@ -1,19 +1,35 @@
 # AirZelo for Android: progress and resume guide
 
-Status: **release-ready except for the owner's permanent signing key.** The app builds, all tests pass, and the
-release APK runs on real Android 11 and Android 14 systems (CI emulators). It has **not been tried on a physical
-phone**. Nothing is published yet: publishing waits for the owner (see "Release" below).
+Status: **published as a public pre-release, signed with the owner's permanent key.**
+<https://github.com/ashiquehanpgd-code/airzelo-travel-crm/releases/tag/android-v0.3.0>: `AirZelo-0.3.0-android-signed.apk`
+(21,753,573 bytes, SHA-256 `96645ecae50bb58b0225f862b59e1c073895aae8ddf62dc32f4baa28d98c2d15`), tag `android-v0.3.0` on
+commit `491c276`. Downloaded without any login (CI and this Mac): checksum matches. Marked pre-release, not "Latest"
+(the desktop's v0.2.1 stays the main download). The release APK runs on Android 11 and 14 emulators; it has **not been
+tried on a physical phone** yet.
 
-Branch: `feature/android-offline-app`, created from `feature/ios-offline-app` so it can reuse the shared parity and
-schema tools in `ios/tools/`. Merging this branch would also bring in the iPhone work. Nothing has been merged into
-`main`, released or hosted, and nothing is on Google Play.
+Branch: `feature/android-offline-app` (created from `feature/ios-offline-app`; merging it would also bring in the
+iPhone work). Nothing merged into `main`; nothing on Google Play.
 
-Last verified CI run: [android #40158356368](https://github.com/ashiquehanpgd-code/airzelo-travel-crm/actions/runs/40158356368)
-on commit `fbe8e10`: **33 tests, 33 passed, 0 failed, 0 skipped** (engine 30, app 3); the desktop restored the
-Android export and reproduced every figure; the release APK passed the device smoke test on Android 11 (API 30) and
-Android 14 (API 34) emulators; artifacts `AirZelo-0.3.0-android-THROWAWAY-KEY.apk` (7.8 MB) and
-`AirZelo-0.3.0-android-THROWAWAY-KEY.aab` (7.6 MB). These are test builds signed with a throwaway key: **not for
-public release.**
+Verified CI: [android-release #40160768107](https://github.com/ashiquehanpgd-code/airzelo-travel-crm/actions/runs/40160768107)
+(tag `android-v0.3.0`) and [android #40160330587](https://github.com/ashiquehanpgd-code/airzelo-travel-crm/actions/runs/40160330587)
+(commit `491c276`): **33 tests, 33 passed, 0 failed, 0 skipped** (engine 30, app 3), desktop restored the Android export
+with every figure, device smoke test passed on API 30 and 34, APK signer certificate SHA-256
+`fbadc32d97ac95c238d0cf46e01a696dd63c2795a186048e4f1121fecd5ac098` (checked by CI), no INTERNET permission. The signed
+App Bundle `AirZelo-0.3.0-android-signed.aab` is a workflow artifact of those runs (30 days), not public.
+
+## Signing key
+
+- Permanent key created 2026-10-25 on the owner's Mac in `~/AirZelo-signing/` (folder `700`, files `600`, outside the
+  repository): `airzelo-release.jks` (PKCS12, alias `airzelo`, RSA 4096, valid to 2054), its password in
+  `keystore-password.txt` and in the macOS login Keychain ("AirZelo Android release keystore"), and `README.txt`
+  with backup and recovery steps. Nothing of it is in Git; the password was never printed.
+- GitHub Actions secrets set from those files (values never displayed): `ANDROID_KEYSTORE_BASE64`,
+  `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`. GitHub secrets cannot be read back: they
+  are not a backup.
+- **Owner action still needed: an off-device backup** (password manager item with the .jks attached + the password,
+  and a copy on an encrypted USB drive kept offline). Until then the Mac holds the only copy; losing it means no
+  update can ever be installed over the published app.
+- Every signed build is checked against the certificate SHA-256 above (`PERMANENT_CERT_SHA256` in `android.yml`).
 
 ## Goal (from the owner's request)
 
@@ -154,7 +170,7 @@ Ready in the repository; waiting for the owner:
   upload (not attached publicly). Release text: `docs/android-release-notes.md`.
 - The repository is public, so release downloads need no GitHub account.
 
-### Owner steps (the permanent key is the owner's; Claude never creates or sees it)
+### How the key was set up (done; for reference or a new key)
 
 1. Install a JDK for `keytool` (e.g. Temurin 17 from adoptium.net), then on the Mac, **outside the repository**:
    ```bash
@@ -174,9 +190,9 @@ Ready in the repository; waiting for the owner:
    gh secret set ANDROID_KEY_PASSWORD --repo ashiquehanpgd-code/airzelo-travel-crm
    gh secret set ANDROID_KEY_ALIAS --body airzelo --repo ashiquehanpgd-code/airzelo-travel-crm
    ```
-4. Publish (owner, or Claude with the owner's explicit go-ahead):
+4. Publish (done for 0.3.0; next version: raise `versionCode`/`versionName`, then):
    ```bash
-   git tag -a android-v0.3.0 -m "AirZelo for Android 0.3.0" && git push crm android-v0.3.0
+   git tag -a android-vX.Y.Z -m "AirZelo for Android X.Y.Z" && git push crm android-vX.Y.Z
    ```
    Then check Actions > android-release: it ends with "Public download verified: <url>".
 
