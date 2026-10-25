@@ -185,7 +185,7 @@ Decide before the first public release (permanent afterwards): the Android appli
 
 ## Not done / known limits
 
-1. **Not tried on a physical phone** (emulators only: no real fingerprint sensor, camera-less). First on-device check: install, unlock (fingerprint and PIN), create a booking,
+1. **Not tried on a physical phone** (emulators only, without a real fingerprint sensor or screen lock). First on-device check: install, unlock (fingerprint and PIN), create a booking,
    PDF share to WhatsApp, export a backup to Files, import it, leave and return (lock + auto backup).
 2. Android 11+ only (minSdk 30, see above). Supporting older phones would need a bundled SQLite (e.g.
    `androidx.sqlite:sqlite-bundled`) behind `SqlDb`.
