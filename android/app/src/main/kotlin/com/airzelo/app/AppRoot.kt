@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
@@ -67,7 +69,7 @@ fun AppRoot(model: AppModel, onUnlock: () -> Unit) {
 
 @Composable
 fun LockScreen(model: AppModel, onUnlock: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(32.dp).testTag("lock-screen"), verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp).testTag("lock-screen"), verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally) {
         Text("AirZelo", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Navy)
         Text("Your agency's books are stored only on this phone. Unlock with your fingerprint, face or screen lock.",
@@ -82,22 +84,22 @@ fun LockScreen(model: AppModel, onUnlock: () -> Unit) {
 @Composable
 fun NoScreenLockScreen(onCheckAgain: () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    Column(Modifier.fillMaxSize().padding(28.dp).testTag("no-screen-lock"), verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(28.dp).testTag("no-screen-lock"),
+        verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Set up a screen lock", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Navy)
-        Text("AirZelo keeps your agency's books on this phone and opens them only after the phone confirms it is you. " +
-            "This phone has no screen lock, so anyone holding it could open them.")
-        Text("1. Open Settings > Security (or Security & privacy) > Screen lock.\n" +
-            "2. Choose PIN, Pattern or Password and set it.\n" +
-            "3. Optional: add your fingerprint or face in the same place.\n" +
-            "4. Come back here and tap Check again.")
-        Note("AirZelo never sees your PIN, pattern, password, fingerprint or face: Android checks them and only tells the app " +
-            "whether it is you.")
+        Text("This phone has no screen lock. AirZelo opens your agency's books only after the phone confirms it is you.")
         Button(onClick = {
             MainActivity.expectingExternal = true
             val intent = android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)
             runCatching { ctx.startActivity(intent) }.onFailure { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS)) }
         }, modifier = Modifier.fillMaxWidth().testTag("open-security-settings")) { Text("Open screen lock settings") }
         androidx.compose.material3.OutlinedButton(onClick = onCheckAgain, modifier = Modifier.fillMaxWidth().testTag("check-again")) { Text("Check again") }
+        Text("1. Open Settings > Security (or Security & privacy) > Screen lock.\n" +
+            "2. Choose PIN, Pattern or Password and set it.\n" +
+            "3. Optional: add your fingerprint or face in the same place.\n" +
+            "4. Come back here and tap Check again.")
+        Note("AirZelo never sees your PIN, pattern, password, fingerprint or face: Android checks them and only tells the app " +
+            "whether it is you.")
     }
 }
 
