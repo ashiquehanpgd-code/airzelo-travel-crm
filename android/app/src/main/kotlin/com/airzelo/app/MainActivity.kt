@@ -1,5 +1,6 @@
 package com.airzelo.app
 
+import android.app.KeyguardManager
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.setContent
@@ -45,16 +46,18 @@ class MainActivity : FragmentActivity() {
 
     fun unlock() {
         if (model.skipLock) { model.locked = false; return }
+        if (!getSystemService(KeyguardManager::class.java).isDeviceSecure) {
+            // no PIN, pattern or password at all (with or without fingerprint hardware): there is nothing to authenticate
+            // against, so the app opens with a plain warning instead of pretending - or staying locked for ever
+            model.passcodeMissing = true
+            model.locked = false
+            return
+        }
         val bm = BiometricManager.from(this)
-        val allowed = when (bm.canAuthenticate(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)) {
-            BiometricManager.BIOMETRIC_SUCCESS -> BIOMETRIC_STRONG or DEVICE_CREDENTIAL
-            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> {
-                // no screen lock at all: there is nothing to authenticate against; warn plainly instead of pretending
-                model.passcodeMissing = true
-                model.locked = false
-                return
-            }
-            else -> if (bm.canAuthenticate(DEVICE_CREDENTIAL) == BiometricManager.BIOMETRIC_SUCCESS) DEVICE_CREDENTIAL else {
+        val allowed = when {
+            bm.canAuthenticate(BIOMETRIC_STRONG or DEVICE_CREDENTIAL) == BiometricManager.BIOMETRIC_SUCCESS -> BIOMETRIC_STRONG or DEVICE_CREDENTIAL
+            bm.canAuthenticate(DEVICE_CREDENTIAL) == BiometricManager.BIOMETRIC_SUCCESS -> DEVICE_CREDENTIAL
+            else -> {
                 model.lockMessage = "This phone cannot confirm your identity right now. Check its screen lock in Settings."
                 return
             }

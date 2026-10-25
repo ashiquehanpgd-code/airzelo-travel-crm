@@ -15,6 +15,12 @@ on:
   pull_request:
     paths: ["android/**", "ios/tools/**", "core/server/**", ".github/workflows/android.yml"]
   workflow_dispatch:
+  # android-release.yml runs this same build (with the permanent key) before publishing
+  workflow_call:
+    outputs:
+      apk: { description: "APK file name", value: "${{ jobs.build.outputs.apk }}" }
+      aab: { description: "App Bundle file name", value: "${{ jobs.build.outputs.aab }}" }
+      signing: { description: "signed (permanent key) or THROWAWAY-KEY", value: "${{ jobs.build.outputs.signing }}" }
 
 permissions:
   contents: read
@@ -24,6 +30,10 @@ jobs:
     name: engine + app tests, release APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    outputs:
+      apk: ${{ steps.pkg.outputs.apk }}
+      aab: ${{ steps.pkg.outputs.aab }}
+      signing: ${{ steps.sign.outputs.kind }}
     env:
       HAS_SIGNING: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' }}
       AZ_PARITY_DIR: ${{ github.workspace }}/../parity
@@ -72,9 +82,9 @@ jobs:
           fi
           echo "AZ_SIGNING_STORE_FILE=$ks" >> "$GITHUB_ENV"
 
-      - name: Engine tests, app workflow test, release APK
+      - name: Engine tests, app workflow test, release APK and App Bundle
         working-directory: android
-        run: ./gradlew --no-daemon --stacktrace :engine:test :app:testReleaseUnitTest :app:assembleRelease
+        run: ./gradlew --no-daemon --stacktrace :engine:test :app:testReleaseUnitTest :app:assembleRelease :app:bundleRelease
 
       - name: Test counts (fails on any failed or skipped test, or if none ran)
         if: always()
@@ -120,6 +130,13 @@ jobs:
           "$bt/aapt2" dump badging "dist-android/$out" | grep -E "^package:|sdkVersion|targetSdkVersion"
           ( cd dist-android && sha256sum "$out" > "$out.sha256" )
           echo "apk=$out" >> "$GITHUB_OUTPUT"
+          # the App Bundle (for a future Google Play upload), signed with the same key, kept apart from the APK
+          aab="AirZelo-${version}-android-${{ steps.sign.outputs.kind }}.aab"
+          mkdir -p dist-aab
+          cp android/app/build/outputs/bundle/release/app-release.aab "dist-aab/$aab"
+          jarsigner -verify "dist-aab/$aab" | tail -1
+          ( cd dist-aab && sha256sum "$aab" > "$aab.sha256" )
+          echo "aab=$aab" >> "$GITHUB_OUTPUT"
           {
             echo "## APK"
             echo ""
@@ -137,6 +154,13 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.pkg.outputs.aab }}
+          path: dist-aab/
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Test reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -147,3 +171,33 @@ jobs:
             android/app/build/test-results/
           if-no-files-found: ignore
           retention-days: 14
+
+  device-smoke:
+    name: release APK on Android ${{ matrix.api }} (emulator)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [30, 34]   # 30 = minSdk (Android 11), 34 = Android 14
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.build.outputs.apk }}
+          path: apk
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install, launch, every tab, backup, report, relaunch
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: python3 android/tools/device_smoke.py "apk/${{ needs.build.outputs.apk }}"

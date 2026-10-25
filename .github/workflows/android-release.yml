@@ -1,0 +1,70 @@
+# Publishes the Android app as a public GitHub Release. Runs only for a tag android-vX.Y.Z pushed by the owner, and only
+# with the owner's permanent signing key (repository secrets): it refuses to publish a throwaway-signed APK.
+#
+#   git tag -a android-v0.3.0 -m "AirZelo for Android 0.3.0" && git push crm android-v0.3.0
+#
+# The release is marked as a pre-release and not as "Latest", so the desktop download page stays as it is.
+# The App Bundle (.aab) is kept as a workflow artifact for a future Google Play upload; it is not attached publicly.
+name: android-release
+
+on:
+  push:
+    tags: ["android-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: tag matches the app version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: |
+          version="$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' android/app/build.gradle.kts)"
+          [ "${GITHUB_REF_NAME}" = "android-v${version}" ] || { echo "tag ${GITHUB_REF_NAME} does not match versionName ${version}"; exit 1; }
+
+  build:
+    needs: check
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+
+  publish:
+    name: public GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Refuse anything but the permanent key
+        run: |
+          if [ "${{ needs.build.outputs.signing }}" != "signed" ]; then
+            echo "The APK was not signed with the permanent key (repository secrets missing). Nothing is published."
+            exit 1
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.build.outputs.apk }}
+          path: dist
+      - name: Create the release (pre-release, not "Latest")
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK: ${{ needs.build.outputs.apk }}
+        run: |
+          set -euo pipefail
+          sha="$(cut -d' ' -f1 "dist/$APK.sha256")"
+          size="$(du -h "dist/$APK" | cut -f1)"
+          sed -e "s/{{APK}}/$APK/g" -e "s/{{SHA256}}/$sha/g" -e "s/{{SIZE}}/$size/g" -e "s/{{COMMIT}}/$GITHUB_SHA/g" \
+            docs/android-release-notes.md > notes.md
+          gh release create "$GITHUB_REF_NAME" "dist/$APK" "dist/$APK.sha256" --repo "$GITHUB_REPOSITORY" \
+            --title "AirZelo for Android ${GITHUB_REF_NAME#android-v}" --notes-file notes.md --prerelease --latest=false --verify-tag
+      - name: The public download works without signing in
+        env:
+          APK: ${{ needs.build.outputs.apk }}
+        run: |
+          set -euo pipefail
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$APK"
+          curl -fsSL --retry 5 --retry-delay 5 -o public.apk "$url"   # no token: as a member of the public would
+          [ "$(sha256sum public.apk | cut -d' ' -f1)" = "$(cut -d' ' -f1 "dist/$APK.sha256")" ] || { echo "downloaded file differs"; exit 1; }
+          echo "Public download verified: $url ($(du -h public.apk | cut -f1))" | tee -a "$GITHUB_STEP_SUMMARY"
