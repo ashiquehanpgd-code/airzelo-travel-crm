@@ -1,12 +1,15 @@
 # AirZelo for Android: progress and resume guide
 
-Status: **0.3.0 published as a public pre-release (signed with the owner's permanent key). Since then, on the branch
-only: stronger app lock and a complete UI/UX redesign, both CI-verified and awaiting the owner's review (no new release).**
-<https://github.com/ashiquehanpgd-code/airzelo-travel-crm/releases/tag/android-v0.3.0>: `AirZelo-0.3.0-android-signed.apk`
-(21,753,573 bytes, SHA-256 `96645ecae50bb58b0225f862b59e1c073895aae8ddf62dc32f4baa28d98c2d15`), tag `android-v0.3.0` on
-commit `491c276`. Downloaded without any login (CI and this Mac): checksum matches. Marked pre-release, not "Latest"
-(the desktop's v0.2.1 stays the main download). The release APK runs on Android 11 and 14 emulators; it has **not been
-tried on a physical phone** yet.
+Status: **0.3.1 published as a public pre-release, signed with the owner's permanent key** (the redesign and the
+stronger app lock, approved by the owner).
+<https://github.com/ashiquehanpgd-code/airzelo-travel-crm/releases/tag/android-v0.3.1>: `AirZelo-0.3.1-android-signed.apk`
+(4,386,447 bytes, SHA-256 `d49fda3ab17f18d55edb9acb67a53e458b2e6d1e454672b2efc5ea2d0a36caff`), tag `android-v0.3.1` on
+commit `afa31d3`, versionCode 4. Downloaded without any login (in CI and from the owner's Mac): HTTP 200, checksum
+matches. Pre-release, not "Latest" (the desktop's v0.2.1 stays the main download). It installs over 0.3.0 (same key,
+higher versionCode) and keeps the books. Release CI
+[#40167825386](https://github.com/ashiquehanpgd-code/airzelo-travel-crm/actions/runs/40167825386): **64 tests, 64
+passed, 0 failed, 0 skipped**, signer certificate SHA-256 `fbadc32d…c098` checked, device smoke test passed on Android
+11 and 14 emulators. Not yet tried on a physical phone. The earlier 0.3.0 release (21.8 MB, unshrunk) stays published.
 
 Branch: `feature/android-offline-app` (created from `feature/ios-offline-app`; merging it would also bring in the
 iPhone work). Nothing merged into `main`; nothing on Google Play.
@@ -18,7 +21,7 @@ with every figure, device smoke test passed on API 30 and 34, APK signer certifi
 `fbadc32d97ac95c238d0cf46e01a696dd63c2795a186048e4f1121fecd5ac098` (checked by CI), no INTERNET permission. The signed
 App Bundle `AirZelo-0.3.0-android-signed.aab` is a workflow artifact of those runs (30 days), not public.
 
-## UI/UX redesign (on the branch; not yet in a published APK, awaiting the owner's review)
+## UI/UX redesign (released in 0.3.1)
 
 Plan and design system: `docs/android-redesign.md`. Summary:
 - **Design system** (`app/.../ui/`): the desktop's palette and tokens (`core/static/app.css`) in light and dark themes
@@ -60,9 +63,9 @@ Plan and design system: `docs/android-redesign.md`. Summary:
   "Customers" tab label and show compact figures in the booking hero; Android's own PIN screen cannot be screenshotted
   (by design); the chart has no per-bar tap details; not designed for tablets beyond the adaptive grids. Screens still
   not built (unchanged from before): debt register, bank reconciliation, tax-profile and currency editing.
-- **Not published**: no new APK release or tag until the owner approves the redesign.
+- **Published** as 0.3.1 after the owner's approval (see Status).
 
-## App lock (since commit `8de1089`, after the 0.3.0 release; not yet in a published APK)
+## App lock (since commit `8de1089`; released in 0.3.1)
 
 - `AppLock.kt`: `AppLock` (state machine: LOCKED / AUTHENTICATING / NO_SCREEN_LOCK / UNLOCKED) and `DeviceAuth`
   (`BiometricDeviceAuth`: AndroidX BiometricPrompt with `BIOMETRIC_STRONG | DEVICE_CREDENTIAL`, or `DEVICE_CREDENTIAL`
