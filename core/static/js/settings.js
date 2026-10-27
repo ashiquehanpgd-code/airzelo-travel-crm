@@ -146,7 +146,7 @@
       const data = await QT.get("/api/backups");
       pane.innerHTML = h`<div class="grid g-side">
         <div class="card"><div class="card-h"><h3>Backups</h3><span class="sub">${data.backups.length} saved</span><div class="actions"><button class="btn sm primary" data-create>${QT.raw(icon("database"))}Back up now</button></div></div><div data-list></div>
-          <div class="card-b small muted" style="border-top:1px solid var(--border)">Folder on this Mac: <span class="mono">${data.folder}</span>. For extra safety, copy downloaded backups to an external drive or iCloud Drive.</div></div>
+          <div class="card-b small muted" style="border-top:1px solid var(--border)">Folder on ${QT.os.computer}: <span class="mono">${data.folder}</span>. For extra safety, copy downloaded backups to an external drive or a cloud folder.</div></div>
         <div class="stack">
           <div class="card"><div class="card-h"><h3>Automatic backups</h3></div><form class="card-b form-grid" data-f onsubmit="return false">
             ${QT.field({ name: "auto_backup_hours", label: "Back up every (hours, 0 = off)", type: "number", span: 12, value: s.auto_backup_hours, attrs: 'min="0" max="720"' })}

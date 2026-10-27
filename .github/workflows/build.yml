@@ -57,6 +57,21 @@ jobs:
           sw_vers
           core/bin/ta-ticket-reader core/tests/fixture_ticket.pdf
 
+      # Windows 10/11 with an English display language already has this; the Server image may not.
+      - name: Windows text recognition (English OCR, part of Windows) and the ticket reader on the synthetic fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $name = 'Language.OCR~~~en-US~0.0.1.0'
+          $cap = Get-WindowsCapability -Online -Name $name
+          "OCR capability $name : $($cap.State)"
+          if ($cap.State -ne 'Installed') { Add-WindowsCapability -Online -Name $name | Out-Null; "installed $name" }
+          $out = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File core/tools/ticket_ocr_windows.ps1 -Path core/tests/fixture_ticket.png
+          $json = $out | Select-Object -Last 1
+          $json.Substring(0, [Math]::Min(400, $json.Length))
+          if (-not ($json | ConvertFrom-Json).ok) { throw 'Windows OCR helper failed' }
+
       - name: Core tests on the bundled runtime
         working-directory: core/tests
         env: { TACRM_NO_OPEN: "1" }

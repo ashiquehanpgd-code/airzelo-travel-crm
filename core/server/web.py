@@ -283,8 +283,9 @@ def r_booking(req, bid):
 @route("GET", r"/api/ticket-scan/status")
 def r_scan_status(req):
     st = ticketscan.reader_status()
+    where = "on this Mac with Apple PDFKit and Vision" if ticketscan.mac_reader_ready() else "on this computer"
     st.update({"offline": True, "cloud_ai": False, "local_ai": False,
-               "note": "Tickets are read on this Mac with Apple PDFKit and Vision. Nothing is sent to the internet."})
+               "note": " ".join(x for x in (st.get("note"), "Tickets are read %s. Nothing is sent to the internet." % where) if x)})
     return J(st)
 
 
@@ -326,22 +327,28 @@ def r_ticket_pdf(req, bid):
 
 
 def open_path(path, reveal=False):
-    """Open a saved file in the system viewer, or show it in Finder / File Explorer."""
+    """Open a saved file in the system viewer, or show it in Finder / File Explorer.
+    Returns (opened, reason) - the reason is shown to the user instead of failing silently."""
     try:
         if sys.platform == "darwin":
             subprocess.run(["/usr/bin/open"] + (["-R"] if reveal else []) + [str(path)], timeout=15, check=True,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         elif sys.platform == "win32":
             if reveal:
-                subprocess.run(["explorer", "/select,", str(path)], timeout=15)
+                # explorer.exe exits with 1 even when it worked, so its exit code is not checked
+                subprocess.run(["explorer.exe", "/select,", str(path)], timeout=15)
             else:
                 os.startfile(str(path))  # noqa: only exists on Windows
         else:
             subprocess.run(["xdg-open", str(path.parent if reveal else path)], timeout=15, check=True,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return True
-    except (OSError, subprocess.SubprocessError):
-        return False
+        return True, ""
+    except OSError as e:
+        if getattr(e, "winerror", None) == 1155:   # ERROR_NO_ASSOCIATION
+            return False, "no app is set to open PDF files on this computer"
+        return False, e.strerror or str(e)
+    except subprocess.SubprocessError as e:
+        return False, str(e) or "the viewer did not start"
 
 
 @route("POST", r"/api/bookings/(\d+)/ticket-file")
@@ -353,11 +360,14 @@ def r_ticket_file(req, bid):
     td = ticket.ticket_data(req.conn, int(bid))
     path, size = ticket.save_pdf(td, variant)
     action = data.get("action")
-    opened = False
-    if action in ("open", "reveal") and not os.environ.get("TACRM_NO_OPEN"):
-        opened = open_path(path, reveal=action == "reveal")
+    opened, reason = False, ""
+    if action in ("open", "reveal"):
+        if os.environ.get("TACRM_NO_OPEN"):
+            reason = "opening files is switched off here"
+        else:
+            opened, reason = open_path(path, reveal=action == "reveal")
     return J({"name": path.name, "folder": str(path.parent), "path": str(path), "size": size, "variant": variant,
-              "action": action, "opened": opened})
+              "action": action, "opened": opened, "open_error": reason})
 
 
 @route("PUT", r"/api/bookings/(\d+)")

@@ -113,13 +113,13 @@
         <div class="sidebar-foot">
           <button type="button" data-theme-toggle>${QT.raw(icon(QT.isDark() ? "sun" : "moon"))}<span>${QT.isDark() ? "Light mode" : "Dark mode"}</span></button>
           <button type="button" data-logout>${QT.raw(icon("logout"))}<span>Sign out</span></button>
-          <div>v${QT.state.meta.version} · Private · this Mac only</div>
+          <div>v${QT.state.meta.version} · Private · ${QT.os.computer} only</div>
         </div>
       </aside>
       <div class="main">
         <header class="topbar">
           <button class="btn icon ghost menu-btn" data-menu aria-label="Menu">${QT.raw(icon("menu"))}</button>
-          <div class="gsearch">${QT.raw(icon("search"))}<input id="gsearch" placeholder="Search PNR, passenger, ticket no., phone, invoice…" autocomplete="off"><span class="kbd">⌘K</span></div>
+          <div class="gsearch">${QT.raw(icon("search"))}<input id="gsearch" placeholder="Search PNR, passenger, ticket no., phone, invoice…" autocomplete="off"><span class="kbd">${QT.os.mod}K</span></div>
           <div class="top-actions">
             <div class="dd"><button class="btn primary" data-quick>${QT.raw(icon("plus"))}<span class="lbl-txt">New</span></button></div>
           </div>
@@ -232,7 +232,7 @@
         <div class="brand" style="padding:0"><div class="brand-mark">${QT.raw(icon("plane"))}</div><div><div class="brand-name">AirZelo</div><div class="brand-sub">Travel agency desk</div></div></div>
         ${QT.raw('<svg class="plane" viewBox="0 0 24 24" fill="#fff">' + '<path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>')}
         <div><h2>Every PNR, payment and rupee of margin — in one place.</h2>
-        <p style="margin-top:12px">Bookings, customers, supplier balances, refunds and profit, stored privately on this Mac.</p></div>
+        <p style="margin-top:12px">Bookings, customers, supplier balances, refunds and profit, stored privately on ${QT.os.computer}.</p></div>
         <div class="small" style="color:#9FB3EA">${QT.raw(icon("lock", "").replace("<svg", '<svg style="width:14px;height:14px;vertical-align:-2px"'))} Runs locally · not reachable from other devices</div>
       </div>
       <div class="auth-form">${QT.raw(formHtml)}</div>
@@ -244,7 +244,7 @@
       <div class="f s12"><label>Username</label><input class="inp" name="username" autocomplete="username" required></div>
       <div class="f s12"><label>Password</label><input class="inp" type="password" name="password" autocomplete="current-password" required></div>
       <button class="btn primary" type="submit">Sign in</button>
-      <div class="muted small">Forgot your password? Stop the app and run <span class="mono">python3 run.py --reset-password</span> on this Mac.</div>
+      <div class="muted small">Forgot your password? Stop the app and run <span class="mono">python3 run.py --reset-password</span> on ${QT.os.computer}.</div>
     </form>`.html);
     const f = $("#login");
     $("[name=username]", f).focus();

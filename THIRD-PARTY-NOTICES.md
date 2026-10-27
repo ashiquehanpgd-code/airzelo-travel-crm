@@ -6,7 +6,9 @@
 | Electron (with Chromium, Node.js) | 44.7.0 | Yes | MIT; Chromium components under BSD-style and other licences (see `LICENSES.chromium.html` in the app) | |
 | electron-builder | 26.17.0 | No (build tool) | MIT | |
 | Apple PDFKit / Vision | macOS system frameworks | No (used from the OS) | Apple SDK terms | macOS ticket reader only |
+| pypdf | 6.20.1 (PyPI wheel, sha256 aa5a55dd…885ad) | Yes (`core/vendor/pypdf`, unmodified) | BSD-3-Clause (`core/vendor/pypdf/LICENSE`) | PDF text for the ticket reader on Windows; no optional extras bundled |
+| Windows.Data.Pdf / Windows.Media.Ocr | Windows 10/11 system components | No (used from the OS) | Windows licence terms | Windows ticket reader (scans and images) |
 
-All other code is the publisher's own (derived from the Quick Trip CRM project). It uses only the Python standard library and has no third-party fonts, icons or web libraries.
+All other code is the publisher's own (derived from the Quick Trip CRM project). It uses the Python standard library plus the bundled pypdf listed above, and has no third-party fonts, icons or web libraries.
 
 **Before release:** a legal review of the EULA and privacy policy; confirmation of ownership of the source code; this list re-checked against the final build (for example with a licence scanner on `node_modules` in production mode and the runtime folder).
