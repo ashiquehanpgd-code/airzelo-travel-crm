@@ -327,7 +327,8 @@ class MigrationV4Clean(Base):
         names = {r[0] for r in self.conn.execute("SELECT name FROM sqlite_master")}
         self.assertFalse({"debts", "debt_entries", "trg_txn_debt_valid"} & names)
         self.assertNotIn("debt_id", [r[1] for r in self.conn.execute("PRAGMA table_info(transactions)")])
-        self.assertEqual([tuple(r) for r in self.conn.execute("SELECT * FROM transactions ORDER BY id")], [t[:-1] for t in txns])
+        # v4 added debt_id and v5 created_by as the last two columns; both are gone in v3
+        self.assertEqual([tuple(r) for r in self.conn.execute("SELECT * FROM transactions ORDER BY id")], [t[:-2] for t in txns])
         self.assertEqual(self.conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
         self.assertEqual(self.conn.execute("PRAGMA foreign_keys").fetchone()[0], 1)
         with self.assertRaises(sqlite3.DatabaseError):

@@ -3,16 +3,19 @@
   "use strict";
   const QT = window.QT;
   const { h, esc, icon, el, $, $$ } = QT;
-  const TABS = [["business", "Company & branding", "building"], ["payment", "Payment details", "bank"], ["invoice", "Documents & formats", "invoice"], ["tax", "Tax / GST", "percent"], ["currencies", "Currencies", "globe"],
-    ["categories", "Expense categories", "expense"], ["backups", "Backup & restore", "database"], ["security", "Security", "shield"]];
+  // [tab, label, icon, permission] - every signed-in user has "My account" (security) for their own password
+  const TABS = [["business", "Company & branding", "building", "settings"], ["payment", "Payment details", "bank", "settings"], ["invoice", "Documents & formats", "invoice", "settings"],
+    ["tax", "Tax / GST", "percent", "settings.tax"], ["currencies", "Currencies", "globe", "settings"], ["categories", "Expense categories", "expense", "settings"],
+    ["users", "Staff & roles", "users", "users"], ["backups", "Backup & restore", "database", "backup"], ["security", "My account", "shield", "signed_in"]];
 
   QT.pages.settings = async function (view, params, tab) {
-    tab = tab || "business";
+    const tabs = TABS.filter((t) => QT.can(t[3]));
+    if (!tab || !tabs.some((t) => t[0] === tab)) tab = tabs[0][0];
     await QT.loadMeta();
     const meta = QT.state.meta;
     const s = meta.settings;
     view.innerHTML = h`<div class="page-head"><div><h1>Settings</h1><div class="sub">Changes are recorded in the audit trail</div></div></div>
-      <div class="tabs">${QT.raw(TABS.map((t) => '<button data-tab="' + t[0] + '" class="' + (t[0] === tab ? "on" : "") + '">' + icon(t[2]).replace("<svg", '<svg style="width:15px;height:15px"') + esc(t[1]) + "</button>").join(""))}</div>
+      <div class="tabs">${QT.raw(tabs.map((t) => '<button data-tab="' + t[0] + '" class="' + (t[0] === tab ? "on" : "") + '">' + icon(t[2]).replace("<svg", '<svg style="width:15px;height:15px"') + esc(t[1]) + "</button>").join(""))}</div>
       <div data-pane></div>`.html;
     $$("[data-tab]", view).forEach((b) => { b.onclick = () => QT.go("#/settings/" + b.dataset.tab); });
     const pane = $("[data-pane]", view);
@@ -131,10 +134,10 @@
           ${QT.field({ name: "new_password", label: "New password", type: "password", span: 12, hint: "At least 10 characters", attrs: 'autocomplete="new-password"' })}
           ${QT.field({ name: "new_password2", label: "Repeat new password", type: "password", span: 12, attrs: 'autocomplete="new-password"' })}
           <div class="f s12"><button class="btn primary" type="button" data-cp style="align-self:flex-start">Change password</button></div></form></div>
-        <div class="card"><div class="card-h"><h3>Session</h3></div><form class="card-b form-grid" data-f onsubmit="return false">
+        ${QT.raw(QT.can("settings") ? h`<div class="card"><div class="card-h"><h3>Session</h3></div><form class="card-b form-grid" data-f onsubmit="return false">
           ${QT.field({ name: "session_hours", label: "Sign out after inactivity (hours)", type: "number", span: 12, value: s.session_hours, attrs: 'min="1" max="72"' })}
           <div class="f s12"><button class="btn primary" type="button" data-save style="align-self:flex-start">Save</button></div>
-          <div class="f s12"><div class="alert info small">${QT.raw(icon("shield"))}<div>AirZelo listens only on <b>127.0.0.1</b> (this computer). Passwords are stored as salted PBKDF2 hashes. Customer documents are only served to a signed-in session. Data folder permissions are restricted to your macOS user.</div></div></div></form></div></div>`.html;
+          <div class="f s12"><div class="alert info small">${QT.raw(icon("shield"))}<div>${QT.raw(QT.cloud() ? "This is a cloud workspace reached over HTTPS at <b>" + esc(location.host) + "</b>. Each person signs in with their own account and every entry records who made it." : "AirZelo listens only on <b>127.0.0.1</b> (" + esc(QT.os.computer) + "). Data folder permissions are restricted to your user account.")} Passwords are stored as salted PBKDF2 hashes. Customer documents are only served to a signed-in session.</div></div></div></form></div>`.html : "")}</div>`.html;
       $("[data-cp]", pane).onclick = async () => {
         const f = $("[data-pw]", pane);
         const d = QT.formData(f);
@@ -142,6 +145,51 @@
         try { await QT.post("/api/auth/password", d); QT.toast("Password changed. Please sign in again."); setTimeout(() => location.reload(), 1200); }
         catch (e) { QT.showErr(f, e); }
       };
+    } else if (tab === "users") {
+      const data = await QT.get("/api/users");
+      const me = QT.me();
+      const roleOpts = (cur) => Object.entries(data.roles).filter(([k]) => k !== "owner" && (k !== "admin" || me.role === "owner")).map(([k, v]) => [k, v]);
+      const canManage = (u) => u.id !== me.id && u.role !== "owner" && (u.role !== "admin" || me.role === "owner");
+      pane.innerHTML = h`<div class="grid g-side" style="max-width:1200px">
+        <div class="card"><div class="card-h"><h3>Staff accounts</h3><span class="sub">${data.users.filter((u) => u.active).length} active</span><div class="actions"><button class="btn sm primary" data-add-user>${QT.raw(icon("plus"))}Add staff member</button></div></div>
+          <div class="card-b flush">${QT.raw(data.users.map((u) => h`<div class="li"><div class="grow"><div class="t1">${u.display_name || u.username} <span class="muted small mono">${u.username}</span></div>
+            <div class="small muted">${data.roles[u.role]}${u.last_login_at ? " · last signed in " + u.last_login_at.slice(0, 16).replace("T", " ") : " · never signed in"}${u.must_change_password ? " · temporary password" : ""}</div></div>
+            ${QT.badge(u.active ? "Active" : "Switched off", u.active ? "b-green" : "b-gray")}
+            ${QT.raw(canManage(u) ? '<button class="btn xs" data-edit-user="' + u.id + '">Edit</button><button class="btn xs" data-pw-user="' + u.id + '">Reset password</button>' : "")}</div>`.html).join(""))}</div></div>
+        <div class="card"><div class="card-h"><h3>What each role can do</h3></div><div class="card-b small stack" style="gap:8px">
+          <div><b>Owner</b> — everything, including restoring backups and managing admins. There is one owner.</div>
+          <div><b>Admin</b> — everything except restoring backups and changing the owner.</div>
+          <div><b>Booking staff</b> — bookings, customers, suppliers, ticket scanner, ticket PDFs and WhatsApp; can record customer receipts but not change or reverse money entries.</div>
+          <div><b>Accountant</b> — receipts, supplier payments, expenses, refunds, invoices, debts, reconciliation and reports; bookings are read-only.</div>
+          <div class="alert info small">${QT.raw(icon("shield"))}<div>Every entry records who made it. Switching a person off, changing their role or resetting their password signs them out on every computer at once.</div></div></div></div></div>`.html;
+      const userForm = (u) => {
+        const body = el(h`<form class="form-grid" onsubmit="return false">
+          ${QT.field({ name: "display_name", label: "Name", span: 6, value: u ? u.display_name : "" })}
+          ${u ? "" : QT.field({ name: "username", label: "Username (for signing in)", span: 6, attrs: 'autocomplete="off"' })}
+          ${QT.field({ name: "role", label: "Role", type: "select", span: 6, opts: QT.options(roleOpts(), u ? u.role : "booking_staff") })}
+          ${u ? QT.field({ name: "active", label: "Account", type: "select", span: 6, opts: QT.options([["1", "Active"], ["0", "Switched off (cannot sign in)"]], String(u.active)) })
+            : QT.field({ name: "password", label: "Temporary password", type: "password", span: 6, hint: "They choose their own password at first sign-in", attrs: 'autocomplete="new-password"' })}
+        </form>`.html);
+        QT.modal({ title: u ? "Edit " + (u.display_name || u.username) : "Add staff member", body, actions: [{ label: "Cancel" }, { label: u ? "Save" : "Create account", cls: "primary", onClick: async () => {
+          const d = QT.formData(body);
+          if (u) { d.active = d.active === "1"; await QT.put("/api/users/" + u.id, d); } else await QT.post("/api/users", d);
+          QT.toast(u ? "Staff account updated" : "Account created. Give them the username and temporary password.");
+          QT.reload();
+        } }] });
+      };
+      $("[data-add-user]", pane).onclick = () => userForm(null);
+      $$("[data-edit-user]", pane).forEach((b) => { b.onclick = () => userForm(data.users.find((u) => u.id === +b.dataset.editUser)); });
+      $$("[data-pw-user]", pane).forEach((b) => {
+        b.onclick = () => {
+          const u = data.users.find((x) => x.id === +b.dataset.pwUser);
+          const body = el(h`<form class="form-grid" onsubmit="return false">${QT.field({ name: "password", label: "Temporary password", type: "password", span: 12, hint: "They are signed out now and must choose a new password at their next sign-in", attrs: 'autocomplete="new-password"' })}</form>`.html);
+          QT.modal({ title: "Reset password for " + (u.display_name || u.username), body, actions: [{ label: "Cancel" }, { label: "Set temporary password", cls: "primary", onClick: async () => {
+            await QT.post("/api/users/" + u.id + "/password", QT.formData(body));
+            QT.toast("Temporary password set. " + (u.display_name || u.username) + " has been signed out.");
+            QT.reload();
+          } }] });
+        };
+      });
     } else if (tab === "backups") {
       const data = await QT.get("/api/backups");
       pane.innerHTML = h`<div class="grid g-side">
@@ -197,7 +245,8 @@
       <div class="card"><div class="filters"><select class="inp" name="entity"><option value="">All records</option>${QT.raw(["booking", "transaction", "adjustment", "allocation", "invoice", "customer", "supplier", "account", "settings", "tax_profile", "document", "backup", "owner", "reconciliation"].map((e) => QT.opt(e, e.replace("_", " "), params.entity)).join(""))}</select>
         <span class="spacer"></span><span class="muted small" data-count></span></div><div data-t></div></div>`.html;
     const cfg = { rows: [], sortable: false, emptyTitle: "No audit entries", columns: [
-      { label: "When", render: (r) => esc(QT.dateTime(r.at)) }, { label: "Record", render: (r) => h`<b>${r.entity}</b> ${r.entity_id ? "#" + r.entity_id : ""}` },
+      { label: "When", render: (r) => esc(QT.dateTime(r.at)) },
+      { label: "Who", render: (r) => r.username ? h`${r.username}${r.ip && QT.cloud() ? QT.raw(' <span class="muted small mono">' + esc(r.ip) + "</span>") : ""}` : '<span class="muted">—</span>' }, { label: "Record", render: (r) => h`<b>${r.entity}</b> ${r.entity_id ? "#" + r.entity_id : ""}` },
       { label: "Action", render: (r) => QT.badge(r.action, /reverse|cancel|delete|remove|failed|restore/.test(r.action) ? "b-red" : r.action === "create" ? "b-green" : "b-blue") },
       { label: "Details", render: (r) => {
         let s = "";

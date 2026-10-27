@@ -1,0 +1,25 @@
+# HTTPS front for the AirZelo cloud workspace. Caddy gets and renews the Let's Encrypt certificate itself.
+# Replace crm.example.in with your subdomain (its DNS A record must point at this server first).
+crm.example.in {
+	encode gzip
+	request_body {
+		max_size 26MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	reverse_proxy 127.0.0.1:8765 {
+		# the core trusts X-Forwarded-For only from this proxy on the same machine (TACRM_TRUST_PROXY=1)
+		header_up X-Forwarded-For {remote_host}
+		transport http {
+			response_header_timeout 120s
+		}
+	}
+	log {
+		output file /var/log/caddy/airzelo-access.log {
+			roll_size 20MiB
+			roll_keep 10
+		}
+	}
+}

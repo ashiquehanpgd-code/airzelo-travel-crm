@@ -15,10 +15,22 @@
       <div><h1 id="product">AirZelo</h1><p class="muted" id="version"></p></div>
     </header>
 
+    <div class="notice" id="notice" role="alert" hidden></div>
+
     <section id="list-view">
-      <div class="row"><h2>Your agencies</h2><button class="btn primary" id="new-btn" type="button">New agency</button></div>
-      <p class="muted">Each agency is a separate company file with its own users, bookings, accounts, attachments and backups. Agencies never share data.</p>
+      <div class="row"><h2>Local company files <span class="tag">this computer · works offline</span></h2><button class="btn primary" id="new-btn" type="button">New agency</button></div>
+      <p class="muted">Each agency is a separate company file with its own users, bookings, accounts, attachments and backups, stored on this computer. Agencies never share data.</p>
       <div id="agencies" class="list"></div>
+
+      <div class="row" style="margin-top:28px"><h2>Cloud workspaces <span class="tag cloud">shared office · needs internet</span></h2><button class="btn" id="add-ws-btn" type="button">Connect to a cloud workspace</button></div>
+      <p class="muted">Your office's shared server: every colleague who signs in sees the same bookings and balances. Each person uses their own login. Without internet nothing can be saved there, and it is never mixed with a local company file.</p>
+      <div id="workspaces" class="list"></div>
+      <form id="ws-form" autocomplete="off" hidden>
+        <label>Name<input name="name" maxlength="80" placeholder="e.g. Office (cloud)"></label>
+        <label>Address<input name="url" required placeholder="https://crm.youragency.in"><span class="hint">From the owner or IT. Must start with https://</span></label>
+        <div class="err" id="ws-err" role="alert"></div>
+        <div class="row end"><button class="btn" type="button" id="ws-cancel">Cancel</button><button class="btn primary" type="submit" id="ws-add">Add workspace</button></div>
+      </form>
     </section>
 
     <section id="new-view" hidden>

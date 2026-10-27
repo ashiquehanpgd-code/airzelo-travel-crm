@@ -27,7 +27,7 @@
         const d = QT.formData(body);
         let r;
         try {
-          r = c.id ? await QT.put("/api/customers/" + c.id, d) : await QT.post("/api/customers", d);
+          r = c.id ? await QT.put("/api/customers/" + c.id, Object.assign(d, { row_version: c.row_version })) : await QT.post("/api/customers", d);
         } catch (e) {
           if (e.code === "duplicate_customer") {
             const ok = await QT.confirm({ title: "Possible duplicate", message: e.message, ok: "Create anyway" });
@@ -58,7 +58,7 @@
       title: s.id ? "Edit supplier" : "New supplier", size: "lg", body,
       actions: [{ label: "Cancel" }, { label: s.id ? "Save changes" : "Create supplier", cls: "primary", onClick: async () => {
         const d = QT.formData(body);
-        const r = s.id ? await QT.put("/api/suppliers/" + s.id, d) : await QT.post("/api/suppliers", d);
+        const r = s.id ? await QT.put("/api/suppliers/" + s.id, Object.assign(d, { row_version: s.row_version })) : await QT.post("/api/suppliers", d);
         await QT.loadMeta();
         QT.toast(s.id ? "Supplier updated" : "Supplier created");
         if (done) done(r);
@@ -189,7 +189,7 @@
             <div class="f s12"><button class="btn primary" type="button" data-sn style="align-self:flex-start">Save notes</button></div></form></div></div>`.html;
         $("[data-e]", pane).onclick = () => QT.customerForm(c);
         $("[data-sn]", pane).onclick = async () => {
-          try { await QT.put("/api/customers/" + c.id, QT.formData($("[data-nf]", pane))); QT.toast("Notes saved"); QT.reload(); } catch (e) { QT.showErr(pane, e); }
+          try { await QT.put("/api/customers/" + c.id, Object.assign(QT.formData($("[data-nf]", pane)), { row_version: c.row_version })); QT.toast("Notes saved"); QT.reload(); } catch (e) { QT.showErr(pane, e); }
         };
       }
     }

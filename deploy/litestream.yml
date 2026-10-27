@@ -1,0 +1,13 @@
+# /etc/litestream.yml - continuous off-site copy of the database to S3 (Mumbai), about one second behind.
+# The access key belongs to an IAM user that can only read and write this one bucket (see README).
+# Keep it in /etc/litestream.env (chmod 600) as LITESTREAM_ACCESS_KEY_ID / LITESTREAM_SECRET_ACCESS_KEY.
+dbs:
+  - path: /var/lib/airzelo/agency/agency.db
+    replicas:
+      - type: s3
+        bucket: airzelo-backups-example
+        path: agency
+        region: ap-south-1
+        retention: 720h        # keep 30 days of point-in-time history
+        snapshot-interval: 24h
+        sync-interval: 1s

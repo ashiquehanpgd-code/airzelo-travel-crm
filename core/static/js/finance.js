@@ -309,7 +309,7 @@
         ${t.payee ? QT.raw("<dt>Paid to</dt><dd>" + esc(t.payee) + "</dd>") : ""}
         <dt>Notes</dt><dd style="white-space:pre-wrap">${t.notes || "—"}</dd>
         <dt>Reconciled</dt><dd>${t.reconciled ? "Yes, " + QT.date(t.reconciled_on) : "No"}</dd>
-        <dt>Recorded</dt><dd>${QT.dateTime(t.created_at)}</dd>
+        <dt>Recorded</dt><dd>${QT.dateTime(t.created_at)}${t.created_by_name ? " by " + t.created_by_name : ""}</dd>
       </dl>
       ${t.allocation_options ? QT.raw('<div data-allocs></div>') : ""}
       <div data-docs></div>
@@ -519,6 +519,7 @@
       if (!a.id) d.active = true;
       if (d.account_type === "cash") { d.bank_name = ""; d.account_last4 = ""; }
       let id = a.id;
+      if (a.id) d.row_version = a.row_version;
       try { if (a.id) await QT.put("/api/accounts/" + a.id, d); else id = (await QT.post("/api/accounts", d)).id; }
       catch (e) {
         if (e.code === "confirm_opening_change") {

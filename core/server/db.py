@@ -463,11 +463,15 @@ def _up_v4(conn):
     _rebuild_transactions(conn, TXN_KIND_CHECK_V1, TXN_KIND_CHECK_V4)
 
 
-def _down_v4(conn):
+def _check_down_v4(conn):
     n = conn.execute("SELECT COUNT(*) FROM transactions WHERE kind IN ('loan_received', 'loan_repayment')").fetchone()[0]
     if n:
         raise RuntimeError("%d loan transaction(s) are recorded. Rolling back would leave them without a type, so it is refused. "
                            "Restore a backup from before the upgrade instead." % n)
+
+
+def _down_v4(conn):
+    _check_down_v4(conn)
     for stmt in _statements(r"""
 DROP TRIGGER IF EXISTS trg_debt_no_delete_linked;
 DROP TRIGGER IF EXISTS trg_txn_debt_immutable;
@@ -485,15 +489,107 @@ DELETE FROM counters WHERE name IN ('debt', 'debt_entry', 'txn-LNR', 'txn-LNP');
 """):
         conn.execute(stmt)
 
+# v5: staff accounts with roles, who created / changed each record, and edit conflict detection.
+# The single owner login becomes user 1 with the role "owner". Added columns carry no foreign keys so that
+# the rollback can drop them again.
+SCHEMA_V5 = r"""
+CREATE TABLE users(
+  id INTEGER PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE CHECK (length(trim(username)) BETWEEN 3 AND 60),
+  display_name TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL CHECK (role IN ('owner','admin','booking_staff','accountant')),
+  pw_hash TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  must_change_password INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  created_by INTEGER,
+  last_login_at TEXT
+);
+CREATE UNIQUE INDEX ux_users_one_owner ON users(role) WHERE role = 'owner';
+INSERT INTO users(id, username, display_name, role, pw_hash, created_at, updated_at)
+  SELECT id, username, username, 'owner', pw_hash, created_at, updated_at FROM owner;
+DELETE FROM sessions;
+ALTER TABLE sessions ADD COLUMN user_id INTEGER;
+ALTER TABLE sessions ADD COLUMN ip TEXT;
+CREATE INDEX idx_sessions_user ON sessions(user_id);
+ALTER TABLE audit_log ADD COLUMN user_id INTEGER;
+ALTER TABLE audit_log ADD COLUMN username TEXT;
+ALTER TABLE audit_log ADD COLUMN ip TEXT;
+ALTER TABLE transactions ADD COLUMN created_by INTEGER;
+ALTER TABLE booking_adjustments ADD COLUMN created_by INTEGER;
+ALTER TABLE invoices ADD COLUMN created_by INTEGER;
+ALTER TABLE debts ADD COLUMN created_by INTEGER;
+ALTER TABLE debt_entries ADD COLUMN created_by INTEGER;
+ALTER TABLE bookings ADD COLUMN created_by INTEGER;
+ALTER TABLE bookings ADD COLUMN updated_by INTEGER;
+ALTER TABLE bookings ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+CREATE TRIGGER trg_bookings_version AFTER UPDATE ON bookings WHEN NEW.row_version = OLD.row_version
+BEGIN UPDATE bookings SET row_version = OLD.row_version + 1 WHERE id = NEW.id; END;
+ALTER TABLE customers ADD COLUMN created_by INTEGER;
+ALTER TABLE customers ADD COLUMN updated_by INTEGER;
+ALTER TABLE customers ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+CREATE TRIGGER trg_customers_version AFTER UPDATE ON customers WHEN NEW.row_version = OLD.row_version
+BEGIN UPDATE customers SET row_version = OLD.row_version + 1 WHERE id = NEW.id; END;
+ALTER TABLE suppliers ADD COLUMN created_by INTEGER;
+ALTER TABLE suppliers ADD COLUMN updated_by INTEGER;
+ALTER TABLE suppliers ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+CREATE TRIGGER trg_suppliers_version AFTER UPDATE ON suppliers WHEN NEW.row_version = OLD.row_version
+BEGIN UPDATE suppliers SET row_version = OLD.row_version + 1 WHERE id = NEW.id; END;
+ALTER TABLE accounts ADD COLUMN created_by INTEGER;
+ALTER TABLE accounts ADD COLUMN updated_by INTEGER;
+ALTER TABLE accounts ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+CREATE TRIGGER trg_accounts_version AFTER UPDATE ON accounts WHEN NEW.row_version = OLD.row_version
+BEGIN UPDATE accounts SET row_version = OLD.row_version + 1 WHERE id = NEW.id; END;
+"""
+
+SCHEMA_V5_DOWN = r"""
+UPDATE owner SET username = (SELECT username FROM users WHERE role = 'owner'), pw_hash = (SELECT pw_hash FROM users WHERE role = 'owner'),
+  updated_at = (SELECT updated_at FROM users WHERE role = 'owner') WHERE EXISTS (SELECT 1 FROM users WHERE role = 'owner');
+DELETE FROM sessions;
+DROP INDEX IF EXISTS idx_sessions_user;
+ALTER TABLE sessions DROP COLUMN ip;
+ALTER TABLE sessions DROP COLUMN user_id;
+ALTER TABLE audit_log DROP COLUMN ip;
+ALTER TABLE audit_log DROP COLUMN username;
+ALTER TABLE audit_log DROP COLUMN user_id;
+DROP TRIGGER IF EXISTS trg_bookings_version;
+ALTER TABLE bookings DROP COLUMN row_version;
+ALTER TABLE bookings DROP COLUMN updated_by;
+ALTER TABLE bookings DROP COLUMN created_by;
+DROP TRIGGER IF EXISTS trg_customers_version;
+ALTER TABLE customers DROP COLUMN row_version;
+ALTER TABLE customers DROP COLUMN updated_by;
+ALTER TABLE customers DROP COLUMN created_by;
+DROP TRIGGER IF EXISTS trg_suppliers_version;
+ALTER TABLE suppliers DROP COLUMN row_version;
+ALTER TABLE suppliers DROP COLUMN updated_by;
+ALTER TABLE suppliers DROP COLUMN created_by;
+DROP TRIGGER IF EXISTS trg_accounts_version;
+ALTER TABLE accounts DROP COLUMN row_version;
+ALTER TABLE accounts DROP COLUMN updated_by;
+ALTER TABLE accounts DROP COLUMN created_by;
+ALTER TABLE transactions DROP COLUMN created_by;
+ALTER TABLE booking_adjustments DROP COLUMN created_by;
+ALTER TABLE invoices DROP COLUMN created_by;
+ALTER TABLE debts DROP COLUMN created_by;
+ALTER TABLE debt_entries DROP COLUMN created_by;
+DROP INDEX IF EXISTS ux_users_one_owner;
+DROP TABLE users;
+"""
+
 MIGRATIONS = [
     (1, "initial schema", SCHEMA_V1),
     (2, "account type, bank name and last 4 digits", SCHEMA_V2),
     (3, "adjustment submission key", SCHEMA_V3),
     (4, "debt register linked to the ledger", _up_v4),
+    (5, "staff accounts, record authors and edit versions", SCHEMA_V5),
 ]
 
 # Undo scripts for `python3 run.py --rollback-to N` (a verified backup is taken first).
 DOWN_MIGRATIONS = {
+    # back to the single owner login (its current username and password are kept); staff accounts are removed
+    5: SCHEMA_V5_DOWN,
     # removes the debt register (refused while loan transactions exist; the rollback takes a verified backup first)
     4: _down_v4,
     3: r"""
@@ -634,9 +730,16 @@ def migrate(conn):
     return current_version(conn)
 
 
+# checks run before any step of a rollback, so a refused rollback changes nothing at all
+DOWN_CHECKS = {4: _check_down_v4}
+
+
 def rollback(conn, target):
     """Undo migrations above `target`, newest first, each in its own transaction."""
     version = current_version(conn)
+    for num in range(version, target, -1):
+        if num in DOWN_CHECKS:
+            DOWN_CHECKS[num](conn)
     for num in range(version, target, -1):
         if num not in DOWN_MIGRATIONS:
             raise RuntimeError("Migration %d cannot be rolled back automatically. Restore a backup instead." % num)

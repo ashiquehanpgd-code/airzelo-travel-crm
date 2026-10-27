@@ -27,12 +27,47 @@ async function render() {
   });
 }
 
+async function renderWorkspaces() {
+  const list = await window.desktop.listWorkspaces();
+  const box = $('#workspaces');
+  box.innerHTML = list.length ? list.map((w) => `<div class="card"><div class="grow"><div class="name">${esc(w.name)}</div>
+    <div class="muted">${esc(w.host)}${w.last_opened ? ' · last opened ' + esc(new Date(w.last_opened).toLocaleString()) : ''}</div></div>
+    <button class="btn" type="button" data-remove-ws="${esc(w.id)}">Remove</button><button class="btn primary" type="button" data-open-ws="${esc(w.id)}">Open</button></div>`).join('')
+    : '<div class="empty">No cloud workspace yet. Use <b>Connect to a cloud workspace</b> if your office has a shared server.</div>';
+  box.querySelectorAll('[data-open-ws]').forEach((b) => {
+    b.onclick = async () => {
+      document.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+      status('Connecting…');
+      const r = await window.desktop.openWorkspace(b.dataset.openWs);
+      if (!r.ok) { status(''); document.querySelectorAll('button').forEach((x) => { x.disabled = false; }); if (r.error !== 'unreachable') alert(r.error); }
+    };
+  });
+  box.querySelectorAll('[data-remove-ws]').forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm('Remove this workspace from the list on this computer? Nothing on the server is changed.')) return;
+      await window.desktop.removeWorkspace(b.dataset.removeWs);
+      await renderWorkspaces();
+    };
+  });
+}
+
 function show(view) {
   $('#list-view').hidden = view !== 'list';
   $('#new-view').hidden = view !== 'new';
   $('#new-err').textContent = '';
 }
 
+$('#add-ws-btn').onclick = () => { $('#ws-form').hidden = false; $('#ws-err').textContent = ''; $('#ws-form').reset(); $('[name=url]').focus(); };
+$('#ws-cancel').onclick = () => { $('#ws-form').hidden = true; };
+$('#ws-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const r = await window.desktop.addWorkspace({ name: f.get('name'), url: f.get('url') });
+  if (!r.ok) { $('#ws-err').textContent = r.error; return; }
+  $('#ws-form').hidden = true;
+  await renderWorkspaces();
+  status(`“${r.workspace.name}” added. Click Open, then sign in with your own login.`);
+};
 $('#new-btn').onclick = () => { show('new'); $('#new-form').reset(); $('[name=agency_name]').focus(); };
 $('#cancel-btn').onclick = () => show('list');
 $('#data-btn').onclick = () => window.desktop.showData();
@@ -56,5 +91,8 @@ $('#new-form').onsubmit = async (e) => {
   $('#product').textContent = info.product;
   $('#version').textContent = `Version ${info.version} · ${info.platform === 'darwin' ? 'macOS' : info.platform === 'win32' ? 'Windows' : info.platform} ${info.arch}`;
   $('#data-path').textContent = info.dataRoot;
+  const notice = new URLSearchParams(location.search).get('notice');
+  if (notice) { $('#notice').textContent = notice; $('#notice').hidden = false; }
   await render();
+  await renderWorkspaces();
 })();
