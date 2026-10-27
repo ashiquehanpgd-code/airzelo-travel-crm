@@ -23,7 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, quote
 
-from . import VERSION, auth, backup, services, reports, finance, ticket, ticketscan, debts, upgrade, branding
+from . import access, VERSION, auth, backup, services, reports, finance, ticket, ticketscan, debts, upgrade, branding
 from .db import connect, migrate, get_setting
 from .errors import ApiError, NotFound, Unauthorized, Forbidden, ValidationError
 
@@ -33,8 +33,21 @@ COOKIE = "qt_session"
 
 
 class Context:
+    """One agency's company file and how it is served.
+
+    Local mode (default): bound to 127.0.0.1 on this computer, as before.
+    Cloud mode (TACRM_MODE=cloud): still bound to 127.0.0.1, behind an HTTPS reverse proxy (deploy/Caddyfile) that
+    serves TACRM_PUBLIC_ORIGIN (https://...). Cookies are Secure, the public host is accepted, and the visitor's address
+    is taken from X-Forwarded-For only when the request comes from the proxy on this machine (TACRM_TRUST_PROXY=1).
+    The server never opens files: PDFs are downloaded to the user's own computer.
+    """
     def __init__(self, data_dir, host="127.0.0.1", port=8765):
         self.data_dir = Path(data_dir)
+        self.mode = "cloud" if os.environ.get("TACRM_MODE") == "cloud" else "local"
+        self.public_origin = (os.environ.get("TACRM_PUBLIC_ORIGIN") or "").rstrip("/")
+        self.trust_proxy = os.environ.get("TACRM_TRUST_PROXY") == "1"
+        if self.mode == "cloud" and not self.public_origin.startswith("https://"):
+            raise SystemExit("Cloud mode needs TACRM_PUBLIC_ORIGIN=https://<your domain> (HTTPS only).")
         self.db_path = self.data_dir / "agency.db"
         self.upload_dir = self.data_dir / "uploads"
         self.backup_dir = self.data_dir / "backups"
@@ -98,11 +111,14 @@ class RWLock:
 ROUTES = []
 
 
-def route(method, pattern, public=False, exclusive=False):
+def route(method, pattern, public=False, exclusive=False, perm=None):
+    """Register an API route. Every route that is not public must name the permission it needs (see access.py)."""
     rx = re.compile("^" + pattern + "$")
+    if not public and perm not in access.ALL:
+        raise RuntimeError("Route %s %s has no permission" % (method, pattern))
 
     def deco(fn):
-        ROUTES.append((method, rx, fn, public, exclusive))
+        ROUTES.append((method, rx, fn, public, exclusive, perm))
         return fn
     return deco
 
@@ -128,41 +144,68 @@ def money_params(q):
 def r_auth_status(req):
     conn = req.conn
     return J({"setup_needed": not auth.owner_exists(conn), "logged_in": req.authed, "version": VERSION,
-              "business_name": get_setting(conn, "business_name", "")})
+              "business_name": get_setting(conn, "business_name", ""), "mode": req.ctx.mode, "user": req.user})
 
 
 @route("POST", r"/api/auth/setup", public=True)
 def r_setup(req):
     auth.setup_owner(req.conn, req.json(), req.ctx.setup_code)
     req.ctx.setup_code = None
-    token = auth.login(req.conn, req.json())
-    return J({"ok": True}, headers={"Set-Cookie": session_cookie(token)})
+    token = auth.login(req.conn, req.json(), req.ip)
+    return J({"ok": True}, headers={"Set-Cookie": session_cookie(req, token)})
 
 
 @route("POST", r"/api/auth/login", public=True)
 def r_login(req):
-    token = auth.login(req.conn, req.json())
-    return J({"ok": True}, headers={"Set-Cookie": session_cookie(token)})
+    token = auth.login(req.conn, req.json(), req.ip)
+    return J({"ok": True}, headers={"Set-Cookie": session_cookie(req, token)})
 
 
 @route("POST", r"/api/auth/logout", public=True)
 def r_logout(req):
     auth.logout(req.conn, req.token)
-    return J({"ok": True}, headers={"Set-Cookie": "%s=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict" % COOKIE})
+    return J({"ok": True}, headers={"Set-Cookie": session_cookie(req, "", clear=True)})
 
 
-@route("POST", r"/api/auth/password")
+@route("POST", r"/api/auth/password", perm=access.SIGNED_IN)
 def r_password(req):
-    auth.change_password(req.conn, req.json())
-    return J({"ok": True}, headers={"Set-Cookie": "%s=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict" % COOKIE})
+    auth.change_password(req.conn, req.user, req.json())
+    return J({"ok": True}, headers={"Set-Cookie": session_cookie(req, "", clear=True)})
 
 
-def session_cookie(token):
-    return "%s=%s; Path=/; HttpOnly; SameSite=Strict" % (COOKIE, token)
+def session_cookie(req, token, clear=False):
+    """HttpOnly, SameSite=Strict, and Secure in cloud mode (HTTPS only). Ends with the browser session."""
+    c = "%s=%s; Path=/; HttpOnly; SameSite=Strict" % (COOKIE, token)
+    if clear:
+        c += "; Max-Age=0"
+    if req.ctx.mode == "cloud":
+        c += "; Secure"
+    return c
+
+
+# ---------------------------------------------------------------- staff accounts
+@route("GET", r"/api/users", perm=access.USERS)
+def r_users(req):
+    return J({"users": auth.list_users(req.conn), "roles": access.ROLES})
+
+
+@route("POST", r"/api/users", perm=access.USERS)
+def r_user_create(req):
+    return J(auth.create_user(req.conn, req.user, req.json()), 201)
+
+
+@route("PUT", r"/api/users/(\d+)", perm=access.USERS)
+def r_user_update(req, uid):
+    return J(auth.update_user(req.conn, req.user, int(uid), req.json()))
+
+
+@route("POST", r"/api/users/(\d+)/password", perm=access.USERS)
+def r_user_password(req, uid):
+    return J(auth.reset_user_password(req.conn, req.user, int(uid), req.json()))
 
 
 # ----------------------------------------------------------- meta / lookup
-@route("GET", r"/api/meta")
+@route("GET", r"/api/meta", perm=access.SIGNED_IN)
 def r_meta(req):
     c = req.conn
     return J({
@@ -173,15 +216,16 @@ def r_meta(req):
         "tax_profiles": services.list_tax_profiles(c), "expense_categories": services.list_expense_categories(c),
         "methods": list(services.METHODS), "statuses": list(services.BOOKING_STATUSES), "service_types": list(services.SERVICE_TYPES),
         "kinds": finance.KIND_LABELS, "version": VERSION, "today": date.today().isoformat(),
+        "me": req.user, "roles": access.ROLES, "mode": req.ctx.mode,
     })
 
 
-@route("GET", r"/api/search")
+@route("GET", r"/api/search", perm=access.BOOKINGS_VIEW)
 def r_search(req):
     return J(services.global_search(req.conn, req.q("q")))
 
 
-@route("GET", r"/api/dashboard")
+@route("GET", r"/api/dashboard", perm=access.REPORTS)
 def r_dashboard(req):
     frm, to = req.q("from"), req.q("to")
     if not frm and not to:
@@ -191,33 +235,33 @@ def r_dashboard(req):
 
 
 # --------------------------------------------------------------- customers
-@route("GET", r"/api/customers")
+@route("GET", r"/api/customers", perm=access.BOOKINGS_VIEW)
 def r_customers(req):
     return J(services.list_customers(req.conn, req.q("q"), req.q("inactive") == "1"))
 
 
-@route("POST", r"/api/customers")
+@route("POST", r"/api/customers", perm=access.BOOKINGS)
 def r_customer_create(req):
     cid = services.create_customer(req.conn, req.json())
     return J(services.get_customer(req.conn, cid), 201)
 
 
-@route("GET", r"/api/customers/(\d+)")
+@route("GET", r"/api/customers/(\d+)", perm=access.BOOKINGS_VIEW)
 def r_customer(req, cid):
     return J(services.get_customer(req.conn, int(cid)))
 
 
-@route("PUT", r"/api/customers/(\d+)")
+@route("PUT", r"/api/customers/(\d+)", perm=access.BOOKINGS)
 def r_customer_update(req, cid):
     return J(services.update_customer(req.conn, int(cid), req.json()))
 
 
-@route("DELETE", r"/api/customers/(\d+)")
+@route("DELETE", r"/api/customers/(\d+)", perm=access.BOOKINGS)
 def r_customer_delete(req, cid):
     return J(services.delete_customer(req.conn, int(cid)))
 
 
-@route("GET", r"/api/customers/(\d+)/statement")
+@route("GET", r"/api/customers/(\d+)/statement", perm=access.REPORTS)
 def r_customer_statement(req, cid):
     L = finance.Ledger(req.conn)
     st = reports.customer_statement(L, int(cid), req.q("from"), req.q("to"))
@@ -227,33 +271,33 @@ def r_customer_statement(req, cid):
 
 
 # --------------------------------------------------------------- suppliers
-@route("GET", r"/api/suppliers")
+@route("GET", r"/api/suppliers", perm=access.BOOKINGS_VIEW)
 def r_suppliers(req):
     return J(services.list_suppliers(req.conn, req.q("inactive") == "1"))
 
 
-@route("POST", r"/api/suppliers")
+@route("POST", r"/api/suppliers", perm=access.BOOKINGS)
 def r_supplier_create(req):
     sid = services.create_supplier(req.conn, req.json())
     return J(services.get_supplier(req.conn, sid), 201)
 
 
-@route("GET", r"/api/suppliers/(\d+)")
+@route("GET", r"/api/suppliers/(\d+)", perm=access.BOOKINGS_VIEW)
 def r_supplier(req, sid):
     return J(services.get_supplier(req.conn, int(sid)))
 
 
-@route("PUT", r"/api/suppliers/(\d+)")
+@route("PUT", r"/api/suppliers/(\d+)", perm=access.BOOKINGS)
 def r_supplier_update(req, sid):
     return J(services.update_supplier(req.conn, int(sid), req.json()))
 
 
-@route("DELETE", r"/api/suppliers/(\d+)")
+@route("DELETE", r"/api/suppliers/(\d+)", perm=access.BOOKINGS)
 def r_supplier_delete(req, sid):
     return J(services.delete_supplier(req.conn, int(sid)))
 
 
-@route("GET", r"/api/suppliers/(\d+)/statement")
+@route("GET", r"/api/suppliers/(\d+)/statement", perm=access.REPORTS)
 def r_supplier_statement(req, sid):
     L = finance.Ledger(req.conn)
     st = reports.supplier_statement(L, int(sid), req.q("from"), req.q("to"))
@@ -263,24 +307,24 @@ def r_supplier_statement(req, sid):
 
 
 # ---------------------------------------------------------------- bookings
-@route("GET", r"/api/bookings")
+@route("GET", r"/api/bookings", perm=access.BOOKINGS_VIEW)
 def r_bookings(req):
     return J(services.search_bookings(req.conn, req.params()))
 
 
-@route("POST", r"/api/bookings")
+@route("POST", r"/api/bookings", perm=access.BOOKINGS)
 def r_booking_create(req):
     bid = services.save_booking(req.conn, req.json())
     return J(services.get_booking(req.conn, bid), 201)
 
 
-@route("GET", r"/api/bookings/(\d+)")
+@route("GET", r"/api/bookings/(\d+)", perm=access.BOOKINGS_VIEW)
 def r_booking(req, bid):
     return J(services.get_booking(req.conn, int(bid)))
 
 
 # ----------------------------------------------------------- offline ticket scanner
-@route("GET", r"/api/ticket-scan/status")
+@route("GET", r"/api/ticket-scan/status", perm=access.BOOKINGS_VIEW)
 def r_scan_status(req):
     st = ticketscan.reader_status()
     where = "on this Mac with Apple PDFKit and Vision" if ticketscan.mac_reader_ready() else "on this computer"
@@ -289,35 +333,35 @@ def r_scan_status(req):
     return J(st)
 
 
-@route("POST", r"/api/ticket-scan")
+@route("POST", r"/api/ticket-scan", perm=access.BOOKINGS)
 def r_scan(req):
     return J(ticketscan.scan(req.conn, req.ctx, req.json()))
 
 
-@route("GET", r"/api/ticket-scan/([0-9a-f]{24})/preview")
+@route("GET", r"/api/ticket-scan/([0-9a-f]{24})/preview", perm=access.BOOKINGS)
 def r_scan_preview(req, sid):
     return Resp(ticketscan.preview_path(req.ctx, sid).read_bytes(), 200, "image/png", {"Cache-Control": "no-store"})
 
 
-@route("DELETE", r"/api/ticket-scan/([0-9a-f]{24})")
+@route("DELETE", r"/api/ticket-scan/([0-9a-f]{24})", perm=access.BOOKINGS)
 def r_scan_discard(req, sid):
     ticketscan.discard_scan(req.ctx, sid)
     return J({"ok": True})
 
 
-@route("POST", r"/api/bookings/(\d+)/attach-scan")
+@route("POST", r"/api/bookings/(\d+)/attach-scan", perm=access.BOOKINGS)
 def r_scan_attach(req, bid):
     did = ticketscan.attach_scan(req.conn, req.ctx, int(bid), req.json().get("scan_id"))
     return J({"document_id": did}, 201)
 
 
 # ----------------------------------------------------------- tickets (PDF + WhatsApp data)
-@route("GET", r"/api/bookings/(\d+)/ticket")
+@route("GET", r"/api/bookings/(\d+)/ticket", perm=access.BOOKINGS_VIEW)
 def r_ticket_data(req, bid):
     return J(ticket.ticket_data(req.conn, int(bid)))
 
 
-@route("GET", r"/api/bookings/(\d+)/ticket\.pdf")
+@route("GET", r"/api/bookings/(\d+)/ticket\.pdf", perm=access.BOOKINGS_VIEW)
 def r_ticket_pdf(req, bid):
     variant = "payment" if req.q("variant") == "payment" else "ticket"
     td = ticket.ticket_data(req.conn, int(bid))
@@ -351,13 +395,17 @@ def open_path(path, reveal=False):
         return False, str(e) or "the viewer did not start"
 
 
-@route("POST", r"/api/bookings/(\d+)/ticket-file")
+@route("POST", r"/api/bookings/(\d+)/ticket-file", perm=access.BOOKINGS_VIEW)
 def r_ticket_file(req, bid):
     """Save the ticket PDF to the tickets folder and optionally open it in Preview or show it in Finder.
     The path is built here from the booking - never taken from the request."""
     data = req.json()
     variant = "payment" if data.get("variant") == "payment" else "ticket"
     td = ticket.ticket_data(req.conn, int(bid))
+    if req.ctx.mode == "cloud":
+        # the server is not the user's computer: the screen downloads ticket.pdf instead
+        return J({"name": ticket.file_name(td, variant), "folder": None, "path": None, "size": None, "variant": variant,
+                  "action": data.get("action"), "opened": False, "open_error": "", "download": True})
     path, size = ticket.save_pdf(td, variant)
     action = data.get("action")
     opened, reason = False, ""
@@ -370,84 +418,86 @@ def r_ticket_file(req, bid):
               "action": action, "opened": opened, "open_error": reason})
 
 
-@route("PUT", r"/api/bookings/(\d+)")
+@route("PUT", r"/api/bookings/(\d+)", perm=access.BOOKINGS)
 def r_booking_update(req, bid):
     services.save_booking(req.conn, req.json(), int(bid))
     return J(services.get_booking(req.conn, int(bid)))
 
 
-@route("POST", r"/api/bookings/(\d+)/status")
+@route("POST", r"/api/bookings/(\d+)/status", perm=access.BOOKINGS)
 def r_booking_status(req, bid):
     services.set_booking_status(req.conn, int(bid), req.json().get("status"))
     return J(services.get_booking(req.conn, int(bid)))
 
 
-@route("POST", r"/api/bookings/(\d+)/adjustments")
+@route("POST", r"/api/bookings/(\d+)/adjustments", perm=access.MONEY)
 def r_adjust(req, bid):
     services.create_adjustment(req.conn, int(bid), req.json())
     return J(services.get_booking(req.conn, int(bid)), 201)
 
 
-@route("POST", r"/api/bookings/(\d+)/refund")
+@route("POST", r"/api/bookings/(\d+)/refund", perm=access.MONEY)
 def r_booking_refund(req, bid):
     return J(services.refund_booking(req.conn, int(bid), req.json()), 201)
 
 
-@route("DELETE", r"/api/bookings/(\d+)")
+@route("DELETE", r"/api/bookings/(\d+)", perm=access.BOOKINGS)
 def r_booking_delete(req, bid):
     return J(services.delete_booking(req.conn, int(bid)))
 
 
-@route("POST", r"/api/adjustments/(\d+)/correct")
+@route("POST", r"/api/adjustments/(\d+)/correct", perm=access.MONEY)
 def r_adjust_correct(req, aid):
     nid = services.correct_adjustment(req.conn, int(aid), req.json())
     return J({"id": nid}, 201)
 
 
-@route("POST", r"/api/adjustments/(\d+)/reverse")
+@route("POST", r"/api/adjustments/(\d+)/reverse", perm=access.MONEY)
 def r_adjust_reverse(req, aid):
     services.reverse_adjustment(req.conn, int(aid), req.json())
     return J({"ok": True})
 
 
-@route("POST", r"/api/adjustments/(\d+)/credit-note")
+@route("POST", r"/api/adjustments/(\d+)/credit-note", perm=access.MONEY)
 def r_credit_note(req, aid):
     iid = services.create_credit_note(req.conn, int(aid), req.json())
     return J(services.get_invoice(req.conn, iid), 201)
 
 
-@route("POST", r"/api/bookings/(\d+)/invoice")
+@route("POST", r"/api/bookings/(\d+)/invoice", perm=access.MONEY)
 def r_invoice_create(req, bid):
     iid = services.create_invoice(req.conn, int(bid), req.json())
     return J(services.get_invoice(req.conn, iid), 201)
 
 
-@route("POST", r"/api/bookings/(\d+)/documents")
+@route("POST", r"/api/bookings/(\d+)/documents", perm=access.BOOKINGS)
 def r_doc_upload(req, bid):
     did = services.save_document(req.conn, req.ctx, req.json(), booking_id=int(bid))
     return J({"id": did}, 201)
 
 
-@route("GET", r"/api/bookings/check-pnr")
+@route("GET", r"/api/bookings/check-pnr", perm=access.BOOKINGS_VIEW)
 def r_check_pnr(req):
     return J(services.find_duplicate_pnr(req.conn, (req.q("pnr") or "").strip().upper(), req.q("exclude")))
 
 
 # ------------------------------------------------------------- transactions
-@route("GET", r"/api/transactions")
+@route("GET", r"/api/transactions", perm=access.MONEY_VIEW)
 def r_txns(req):
     return J(services.list_transactions(req.conn, req.params()))
 
 
-@route("POST", r"/api/transactions")
+@route("POST", r"/api/transactions", perm=access.RECEIPTS)
 def r_txn_create(req):
+    if req.json().get("kind") != "customer_receipt":
+        access.require(req.user, access.MONEY)   # booking staff may only record customer receipts
     tid, dup = services.create_transaction(req.conn, req.json())
     r = services.get_transaction(req.conn, tid)
     r["idempotent_replay"] = dup
     return J(r, 200 if dup else 201)
 
 
-@route("POST", r"/api/transactions/(\d+)/correct")
+@route("POST", r"/api/transactions/(\d+)/correct", perm=access.MONEY)
 def r_txn_correct(req, tid):
     nid, how = services.correct_transaction(req.conn, int(tid), req.json())
     r = services.get_transaction(req.conn, nid)
@@ -455,37 +505,37 @@ def r_txn_correct(req, tid):
     return J(r)
 
 
-@route("GET", r"/api/transactions/(\d+)")
+@route("GET", r"/api/transactions/(\d+)", perm=access.MONEY_VIEW)
 def r_txn(req, tid):
     return J(services.get_transaction(req.conn, int(tid)))
 
 
-@route("PATCH", r"/api/transactions/(\d+)")
+@route("PATCH", r"/api/transactions/(\d+)", perm=access.MONEY)
 def r_txn_meta(req, tid):
     services.update_transaction_meta(req.conn, int(tid), req.json())
     return J(services.get_transaction(req.conn, int(tid)))
 
 
-@route("POST", r"/api/transactions/(\d+)/reverse")
+@route("POST", r"/api/transactions/(\d+)/reverse", perm=access.MONEY)
 def r_txn_reverse(req, tid):
     rid = services.reverse_transaction(req.conn, int(tid), req.json())
     return J(services.get_transaction(req.conn, rid), 201)
 
 
-@route("PUT", r"/api/transactions/(\d+)/allocations")
+@route("PUT", r"/api/transactions/(\d+)/allocations", perm=access.MONEY)
 def r_txn_alloc(req, tid):
     services.set_allocations(req.conn, int(tid), req.json())
     return J(services.get_transaction(req.conn, int(tid)))
 
 
-@route("POST", r"/api/transactions/(\d+)/documents")
+@route("POST", r"/api/transactions/(\d+)/documents", perm=access.MONEY)
 def r_txn_doc(req, tid):
     did = services.save_document(req.conn, req.ctx, req.json(), transaction_id=int(tid))
     return J({"id": did}, 201)
 
 
 # ---------------------------------------------------------------- documents
-@route("GET", r"/api/documents/(\d+)")
+@route("GET", r"/api/documents/(\d+)", perm=access.BOOKINGS_VIEW)
 def r_doc(req, did):
     d, path = services.get_document(req.conn, req.ctx, int(did))
     data = path.read_bytes()
@@ -493,67 +543,67 @@ def r_doc(req, did):
     return Resp(data, 200, d["mime"], {"Content-Disposition": "%s; filename*=UTF-8''%s" % (disp, quote(d["original_name"]))})
 
 
-@route("DELETE", r"/api/documents/(\d+)")
+@route("DELETE", r"/api/documents/(\d+)", perm=access.BOOKINGS)
 def r_doc_delete(req, did):
     services.delete_document(req.conn, req.ctx, int(did))
     return J({"ok": True})
 
 
 # ---------------------------------------------------------------- invoices
-@route("GET", r"/api/invoices")
+@route("GET", r"/api/invoices", perm=access.MONEY_VIEW)
 def r_invoices(req):
     return J(services.list_invoices(req.conn, req.params()))
 
 
-@route("GET", r"/api/invoices/(\d+)")
+@route("GET", r"/api/invoices/(\d+)", perm=access.MONEY_VIEW)
 def r_invoice(req, iid):
     return J(services.get_invoice(req.conn, int(iid)))
 
 
-@route("POST", r"/api/invoices/(\d+)/cancel")
+@route("POST", r"/api/invoices/(\d+)/cancel", perm=access.MONEY)
 def r_invoice_cancel(req, iid):
     services.cancel_invoice(req.conn, int(iid), req.json())
     return J(services.get_invoice(req.conn, int(iid)))
 
 
 # ---------------------------------------------------------------- accounts
-@route("GET", r"/api/accounts")
+@route("GET", r"/api/accounts", perm=access.MONEY_VIEW)
 def r_accounts(req):
     return J(services.list_accounts(req.conn))
 
 
-@route("POST", r"/api/accounts")
+@route("POST", r"/api/accounts", perm=access.MONEY)
 def r_account_create(req):
     return J({"id": services.save_account(req.conn, req.json())}, 201)
 
 
-@route("PUT", r"/api/accounts/(\d+)")
+@route("PUT", r"/api/accounts/(\d+)", perm=access.MONEY)
 def r_account_update(req, aid):
     return J({"id": services.save_account(req.conn, req.json(), int(aid))})
 
 
-@route("POST", r"/api/accounts/(\d+)/active")
+@route("POST", r"/api/accounts/(\d+)/active", perm=access.MONEY)
 def r_account_active(req, aid):
     return J({"id": services.set_account_active(req.conn, int(aid), bool(req.json().get("active")))})
 
 
-@route("GET", r"/api/accounts/(\d+)/reconcile")
+@route("GET", r"/api/accounts/(\d+)/reconcile", perm=access.MONEY_VIEW)
 def r_recon(req, aid):
     return J(services.reconciliation_view(req.conn, int(aid), req.q("as_of")))
 
 
-@route("POST", r"/api/accounts/(\d+)/reconcile")
+@route("POST", r"/api/accounts/(\d+)/reconcile", perm=access.MONEY)
 def r_recon_save(req, aid):
     return J(services.save_reconciliation(req.conn, int(aid), req.json()))
 
 
 # ------------------------------------------------------------------- debts
-@route("GET", r"/api/debts")
+@route("GET", r"/api/debts", perm=access.MONEY_VIEW)
 def r_debts(req):
     return J(debts.list_debts(req.conn, req.q("status")))
 
 
-@route("GET", r"/api/debts/summary")
+@route("GET", r"/api/debts/summary", perm=access.MONEY_VIEW)
 def r_debt_summary(req):
     frm, to = req.q("from"), req.q("to")
     if not frm or not to:
@@ -562,64 +612,64 @@ def r_debt_summary(req):
     return J(debts.summary(req.conn, frm, to))
 
 
-@route("POST", r"/api/debts")
+@route("POST", r"/api/debts", perm=access.MONEY)
 def r_debt_create(req):
     return J({"id": debts.save_debt(req.conn, req.json())}, 201)
 
 
-@route("GET", r"/api/debts/(\d+)")
+@route("GET", r"/api/debts/(\d+)", perm=access.MONEY_VIEW)
 def r_debt(req, did):
     return J(debts.get_debt(req.conn, int(did)))
 
 
-@route("PUT", r"/api/debts/(\d+)")
+@route("PUT", r"/api/debts/(\d+)", perm=access.MONEY)
 def r_debt_update(req, did):
     return J({"id": debts.save_debt(req.conn, req.json(), int(did))})
 
 
-@route("DELETE", r"/api/debts/(\d+)")
+@route("DELETE", r"/api/debts/(\d+)", perm=access.MONEY)
 def r_debt_delete(req, did):
     return J({"id": debts.delete_debt(req.conn, int(did))})
 
 
-@route("POST", r"/api/debts/(\d+)/status")
+@route("POST", r"/api/debts/(\d+)/status", perm=access.MONEY)
 def r_debt_status(req, did):
     return J({"id": debts.set_status(req.conn, int(did), req.json().get("status"))})
 
 
-@route("POST", r"/api/debts/receive")
+@route("POST", r"/api/debts/receive", perm=access.MONEY)
 def r_debt_receive(req):
     did, tid = debts.receive_loan(req.conn, req.json())
     return J({"debt_id": did, "transaction_id": tid}, 201)
 
 
-@route("POST", r"/api/debts/(\d+)/repay")
+@route("POST", r"/api/debts/(\d+)/repay", perm=access.MONEY)
 def r_debt_repay(req, did):
     return J(debts.repay_loan(req.conn, int(did), req.json()), 201)
 
 
-@route("GET", r"/api/debts/repayments/(\d+)")
+@route("GET", r"/api/debts/repayments/(\d+)", perm=access.MONEY_VIEW)
 def r_debt_repayment(req, tid):
     return J(debts.repayment(req.conn, int(tid)))
 
 
-@route("POST", r"/api/debts/repayments/(\d+)/reverse")
+@route("POST", r"/api/debts/repayments/(\d+)/reverse", perm=access.MONEY)
 def r_debt_repayment_reverse(req, tid):
     return J({"reversal_ids": debts.reverse_repayment(req.conn, int(tid), req.json())})
 
 
-@route("POST", r"/api/debts/(\d+)/interest")
+@route("POST", r"/api/debts/(\d+)/interest", perm=access.MONEY)
 def r_debt_interest(req, did):
     return J({"id": debts.add_interest_charge(req.conn, int(did), req.json())}, 201)
 
 
-@route("POST", r"/api/debt-entries/(\d+)/reverse")
+@route("POST", r"/api/debt-entries/(\d+)/reverse", perm=access.MONEY)
 def r_debt_entry_reverse(req, eid):
     return J({"id": debts.reverse_entry(req.conn, int(eid), req.json())})
 
 
 # ----------------------------------------------------------------- reports
-@route("GET", r"/api/reports/([a-z_]+)")
+@route("GET", r"/api/reports/([a-z_]+)", perm=access.REPORTS)
 def r_report(req, name):
     rep = reports.run_report(req.conn, name, req.params())
     if req.q("format") == "csv":
@@ -633,17 +683,17 @@ def csv_resp(text, filename):
 
 
 # ---------------------------------------------------------------- settings
-@route("PUT", r"/api/settings")
+@route("PUT", r"/api/settings", perm=access.SETTINGS)
 def r_settings(req):
     return J(services.update_settings(req.conn, req.json()))
 
 
-@route("POST", r"/api/settings/logo")
+@route("POST", r"/api/settings/logo", perm=access.SETTINGS)
 def r_settings_logo(req):
     return J({"logo": services.set_logo(req.conn, req.ctx, req.json()), "settings": services.get_settings(req.conn)})
 
 
-@route("GET", r"/api/branding/logo")
+@route("GET", r"/api/branding/logo", perm=access.SIGNED_IN)
 def r_branding_logo(req):
     """The current logo, or a specific stored one (?f=logo-<hash>.png) for documents issued with an older logo."""
     name = req.q("f") or get_setting(req.conn, "logo_file", "")
@@ -653,57 +703,57 @@ def r_branding_logo(req):
     return Resp(path.read_bytes(), 200, "image/png" if path.suffix == ".png" else "image/jpeg", {"Cache-Control": "private, max-age=86400"})
 
 
-@route("POST", r"/api/currencies")
+@route("POST", r"/api/currencies", perm=access.SETTINGS)
 def r_currency(req):
     return J(services.save_currency(req.conn, req.json()))
 
 
-@route("POST", r"/api/tax-profiles")
+@route("POST", r"/api/tax-profiles", perm=access.SETTINGS_TAX)
 def r_tax_create(req):
     return J({"id": services.save_tax_profile(req.conn, req.json())}, 201)
 
 
-@route("PUT", r"/api/tax-profiles/(\d+)")
+@route("PUT", r"/api/tax-profiles/(\d+)", perm=access.SETTINGS_TAX)
 def r_tax_update(req, pid):
     return J({"id": services.save_tax_profile(req.conn, req.json(), int(pid))})
 
 
-@route("POST", r"/api/expense-categories")
+@route("POST", r"/api/expense-categories", perm=access.MONEY)
 def r_expcat(req):
     return J({"name": services.save_expense_category(req.conn, req.json())})
 
 
-@route("GET", r"/api/audit")
+@route("GET", r"/api/audit", perm=access.REPORTS)
 def r_audit(req):
     return J(services.list_audit(req.conn, req.q("entity"), req.q("entity_id"), req.q("limit") or 300))
 
 
 # ----------------------------------------------------------------- backups
-@route("GET", r"/api/backups")
+@route("GET", r"/api/backups", perm=access.BACKUP)
 def r_backups(req):
     return J({"backups": backup.list_backups(req.ctx), "folder": str(req.ctx.backup_dir)})
 
 
-@route("POST", r"/api/backups")
+@route("POST", r"/api/backups", perm=access.BACKUP)
 def r_backup_create(req):
     r = backup.create_backup(req.ctx, "manual", (req.json() or {}).get("note"))
     with_conn_audit(req, "backup", r["name"], "create", {"size": r["size"]})
     return J(r, 201)
 
 
-@route("POST", r"/api/backups/verify")
+@route("POST", r"/api/backups/verify", perm=access.BACKUP)
 def r_backup_verify(req):
     p = backup.backup_path(req.ctx, req.json().get("name"))
     return J(backup.verify_backup(p))
 
 
-@route("GET", r"/api/backups/download")
+@route("GET", r"/api/backups/download", perm=access.BACKUP)
 def r_backup_download(req):
     p = backup.backup_path(req.ctx, req.q("name"))
     return Resp(p.read_bytes(), 200, "application/zip", {"Content-Disposition": "attachment; filename=\"%s\"" % p.name})
 
 
-@route("POST", r"/api/backups/restore", exclusive=True)
+@route("POST", r"/api/backups/restore", exclusive=True, perm=access.RESTORE)
 def r_backup_restore(req):
     data = req.json()
     if data.get("confirm") != "RESTORE":
@@ -758,6 +808,8 @@ class Request:
         self.conn = None
         self.token = None
         self.authed = False
+        self.user = None
+        self.ip = handler.client_ip()
 
     def q(self, k):
         v = self.query.get(k)
@@ -805,6 +857,8 @@ def make_handler(ctx, log=print):
     allowed_hosts = {"127.0.0.1:%d" % ctx.port, "localhost:%d" % ctx.port, "[::1]:%d" % ctx.port}
     if ctx.host not in ("127.0.0.1", "localhost", "::1"):
         allowed_hosts.add("%s:%d" % (ctx.host, ctx.port))
+    if ctx.public_origin:
+        allowed_hosts.add(urlparse(ctx.public_origin).netloc.lower())   # e.g. crm.example.com (served by the proxy)
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "AirZelo/" + VERSION
@@ -827,6 +881,14 @@ def make_handler(ctx, log=print):
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(resp.body)
+
+        def client_ip(self):
+            peer = self.client_address[0] if self.client_address else ""
+            if ctx.trust_proxy and peer in ("127.0.0.1", "::1"):
+                fwd = [x.strip() for x in (self.headers.get("X-Forwarded-For") or "").split(",") if x.strip()]
+                if fwd:
+                    return fwd[-1][:64]   # the address the proxy itself saw (left-hand entries can be forged)
+            return peer
 
         def _err(self, status, message, code="error"):
             self._send(J({"error": message, "code": code}, status))
@@ -869,16 +931,16 @@ def make_handler(ctx, log=print):
                 origin = self.headers.get("Origin")
                 if origin and urlparse(origin).netloc.lower() not in allowed_hosts:
                     return self._err(403, "Cross-site request blocked", "csrf")
-            for m, rx, fn, public, exclusive in ROUTES:
+            for m, rx, fn, public, exclusive, perm in ROUTES:
                 if m != method:
                     continue
                 mt = rx.match(path)
                 if not mt:
                     continue
-                return self.run(fn, mt.groups(), public, exclusive, method, path, parse_qs(u.query), body)
+                return self.run(fn, mt.groups(), public, exclusive, perm, method, path, parse_qs(u.query), body)
             return self._err(404, "Not found", "not_found")
 
-        def run(self, fn, groups, public, exclusive, method, path, query, body):
+        def run(self, fn, groups, public, exclusive, perm, method, path, query, body):
             req = Request(self, ctx, method, path, query, body)
             if exclusive:
                 ctx.gate.acquire_write()
@@ -892,10 +954,16 @@ def make_handler(ctx, log=print):
                 except cookies.CookieError:
                     pass
                 req.token = c[COOKIE].value if COOKIE in c else None
-                req.authed = auth.validate_session(req.conn, req.token)
-                if not public and not req.authed:
-                    raise Unauthorized()
-                resp = fn(req, *groups)
+                req.user = auth.validate_session(req.conn, req.token)
+                req.authed = req.user is not None
+                if not public:
+                    if not req.authed:
+                        raise Unauthorized()
+                    if req.user["must_change_password"] and perm != access.SIGNED_IN:
+                        raise Forbidden("Choose a new password before you continue (My account).")
+                    access.require(req.user, perm)
+                with access.acting_as(dict(req.user, ip=req.ip) if req.user else None):
+                    resp = fn(req, *groups)
             except ApiError as e:
                 resp = J(e.to_dict(), e.status)
             except Exception as e:
@@ -939,12 +1007,18 @@ def make_handler(ctx, log=print):
     return Handler
 
 
+class Server(ThreadingHTTPServer):
+    """One thread per request. The listen queue is raised from Python's default of 5: with several staff (or the
+    proxy) connecting at the same moment, a full queue makes the operating system reset connections."""
+    request_queue_size = 128
+    daemon_threads = True
+
+
 def serve(data_dir, host="127.0.0.1", port=8765, open_browser=False, log=print):
     ctx = Context(data_dir, host, port)
     ctx.init()
     handler = make_handler(ctx, log)
-    httpd = ThreadingHTTPServer((host, port), handler)
-    httpd.daemon_threads = True
+    httpd = Server((host, port), handler)
     auto = backup.AutoBackup(ctx, log)
     auto.start()
     url = "http://127.0.0.1:%d" % port if host in ("127.0.0.1", "0.0.0.0") else "http://%s:%d" % (host, port)

@@ -1,0 +1,28 @@
+# systemd unit for the AirZelo core in cloud mode. Install: /etc/systemd/system/airzelo.service
+[Unit]
+Description=AirZelo travel CRM (cloud workspace)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=airzelo
+Group=airzelo
+WorkingDirectory=/opt/airzelo/core
+EnvironmentFile=/etc/airzelo/airzelo.env
+ExecStart=/usr/bin/python3 -I -u -B /opt/airzelo/core/run.py --data ${TACRM_DATA_DIR} --host 127.0.0.1 --port 8765 --no-browser
+# SIGTERM: the core stops accepting requests, finishes the ones in flight and checkpoints the database
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+# hardening: the core only needs its data folder
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=/var/lib/airzelo
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

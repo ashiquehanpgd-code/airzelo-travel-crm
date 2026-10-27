@@ -464,6 +464,7 @@
         d.currency = b.currency; d.exchange_rate = b.exchange_rate; d.tax_profile_id = b.tax_profile_id || ""; d.tax_override = !!b.tax_override; d.tax_rate = b.tax_rate;
       }
       if (force) d.force_duplicate = true;
+      if (editing) d.row_version = b.row_version;   // refused (409) if someone else saved this booking meanwhile
       const btns = $$("[data-save],[data-save2]", view);
       btns.forEach((x) => { x.disabled = true; });
       try {

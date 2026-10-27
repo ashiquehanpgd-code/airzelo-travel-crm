@@ -600,3 +600,11 @@ select.inp { padding-right: 28px; appearance: none; -webkit-appearance: none;
 .wizard-steps span { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--surface-3); color: var(--muted); }
 .wizard-steps span.on { background: var(--royal); color: #fff; }
 .wizard-steps span.done { background: var(--success-50); color: var(--success); }
+/* shared office: connection lost (cloud mode) and signed-in user */
+#offline-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; padding: 9px 16px; text-align: center; font-size: 13px; font-weight: 600;
+  background: var(--danger, #B42318); color: #fff; }
+body.is-offline .btn.primary { opacity: .55; }
+.whoami { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 12px; }
+.whoami b { font-size: 13px; }
+.mode-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: var(--surface-3); color: var(--muted); }
+.mode-chip.cloud { background: var(--royal); color: #fff; }

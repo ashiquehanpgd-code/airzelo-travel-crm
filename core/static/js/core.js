@@ -265,9 +265,46 @@
   QT.statusBadge = (s) => QT.badge(QT.labels.status[s] || s, QT.labels.statusCls[s]);
   QT.payBadge = (s) => QT.badge(QT.labels.pay[s] || s, QT.labels.payCls[s]);
 
+  // ---------------------------------------------------------------- staff roles
+  // the screens hide what the role cannot do; the server refuses it anyway (403)
+  QT.me = () => (QT.state.meta && QT.state.meta.me) || null;
+  QT.can = (perm) => { const me = QT.me(); return !!me && me.permissions.includes(perm); };
+  QT.cloud = () => !!(QT.state.meta && QT.state.meta.mode === "cloud");
+
+  // ---------------------------------------------------------------- connection (cloud mode)
+  // Without a connection nothing is saved: the server is the only copy of the shared books, and money entries are
+  // never queued offline. Each form keeps its submission key, so saving again after reconnecting cannot post twice.
+  QT.offline = false;
+  let offlineTimer = null;
+  function setOffline(on) {
+    if (on === QT.offline) return;
+    QT.offline = on;
+    document.body.classList.toggle("is-offline", on);
+    let bar = document.getElementById("offline-bar");
+    if (on && !bar) {
+      bar = document.createElement("div");
+      bar.id = "offline-bar";
+      bar.setAttribute("role", "alert");
+      bar.textContent = "No connection to the server. Nothing can be saved until it is back — your open forms are kept. Reconnecting…";
+      document.body.prepend(bar);
+    }
+    if (!on && bar) bar.remove();
+    clearInterval(offlineTimer);
+    if (on) {
+      offlineTimer = setInterval(async () => {
+        try { await fetch("/api/auth/status", { credentials: "same-origin", cache: "no-store" }); setOffline(false); QT.toast("Connection restored. You can save again."); }
+        catch (e) { /* still offline */ }
+      }, 5000);
+    }
+  }
+  window.addEventListener("offline", () => setOffline(true));
+
   // ---------------------------------------------------------------- api
   QT.api = async function (method, path, body, opts) {
     opts = opts || {};
+    if (QT.offline && method !== "GET") {
+      throw Object.assign(new Error("No connection to the server, so nothing was saved. Try again when the connection is back."), { code: "network" });
+    }
     const init = { method, headers: { "X-QT-CSRF": "1" }, credentials: "same-origin" };
     if (body !== undefined && body !== null) {
       init.headers["Content-Type"] = "application/json";
@@ -277,7 +314,9 @@
     try {
       res = await fetch(path, init);
     } catch (e) {
-      const err = new Error("Cannot reach AirZelo. Is the app still running?");
+      if (QT.cloud()) setOffline(true);
+      const err = new Error(QT.cloud() ? "No connection to the server" + (method === "GET" ? "." : ", so this was not saved. Try again when the connection is back.")
+        : "Cannot reach AirZelo. Is the app still running?");
       err.code = "network";
       throw err;
     }

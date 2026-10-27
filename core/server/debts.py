@@ -14,7 +14,7 @@ The debt balances are calculated from these records every time; nothing is store
 """
 import uuid
 
-from . import validate as v
+from . import access, validate as v
 from .db import tx, now_iso, rows, one, get_setting, next_counter
 from .errors import ValidationError, NotFound, Conflict
 from .finance import Ledger, txn_row, dashboard
@@ -166,10 +166,10 @@ def _insert_debt(conn, p, idem, ts):
     debt_no = "DEBT-%04d" % next_counter(conn, "debt")
     cur = get_setting(conn, "base_currency", "INR")
     c = conn.execute("INSERT INTO debts(debt_no, creditor, creditor_type, creditor_phone, reference, start_date, due_date, currency, "
-                     "opening_amount, interest_rate, interest_terms, notes, idem_key, created_at, updated_at) "
-                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                     "opening_amount, interest_rate, interest_terms, notes, idem_key, created_at, updated_at, created_by) "
+                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                      (debt_no, p["creditor"], p["creditor_type"], p["creditor_phone"], p["reference"], p["start_date"], p["due_date"],
-                      cur, p["opening_amount"], p["interest_rate"], p["interest_terms"], p["notes"], idem, ts, ts))
+                      cur, p["opening_amount"], p["interest_rate"], p["interest_terms"], p["notes"], idem, ts, ts, access.uid()))
     did = c.lastrowid
     audit(conn, "debt", did, "create", None, dict(p, debt_no=debt_no, currency=cur))
     return did
@@ -297,9 +297,9 @@ def add_interest_charge(conn, did, data):
         amount = parse_amount(data.get("amount"), "Interest charged", required=True, allow_zero=False)
         entry_date = v.d(data, "entry_date", label="Date") or today()
         entry_no = "DE-%05d" % next_counter(conn, "debt_entry")
-        cur = conn.execute("INSERT INTO debt_entries(entry_no, debt_id, entry_date, kind, sign, amount, reference, notes, idem_key, created_at) "
-                           "VALUES (?,?,?,'interest_charge',1,?,?,?,?,?)",
-                           (entry_no, did, entry_date, amount, v.s(data, "reference", 120), v.s(data, "notes", 1000), idem, now_iso()))
+        cur = conn.execute("INSERT INTO debt_entries(entry_no, debt_id, entry_date, kind, sign, amount, reference, notes, idem_key, created_at, created_by) "
+                           "VALUES (?,?,?,'interest_charge',1,?,?,?,?,?,?)",
+                           (entry_no, did, entry_date, amount, v.s(data, "reference", 120), v.s(data, "notes", 1000), idem, now_iso(), access.uid()))
         eid = cur.lastrowid
         audit(conn, "debt_entry", eid, "create", None, {"debt_id": did, "entry_no": entry_no, "entry_date": entry_date, "amount": amount})
     return eid
@@ -314,9 +314,9 @@ def reverse_entry(conn, eid, data):
         if e["sign"] < 0 or e["reversed_by"]:
             raise Conflict("This entry has already been reversed", "already_reversed")
         entry_no = "DE-%05d" % next_counter(conn, "debt_entry")
-        cur = conn.execute("INSERT INTO debt_entries(entry_no, debt_id, entry_date, kind, sign, amount, reference, notes, reversal_of, created_at) "
-                           "VALUES (?,?,?,?,-1,?,?,?,?,?)",
-                           (entry_no, e["debt_id"], today(), e["kind"], e["amount"], e["entry_no"], "Reversal: " + reason, eid, now_iso()))
+        cur = conn.execute("INSERT INTO debt_entries(entry_no, debt_id, entry_date, kind, sign, amount, reference, notes, reversal_of, created_at, created_by) "
+                           "VALUES (?,?,?,?,-1,?,?,?,?,?,?)",
+                           (entry_no, e["debt_id"], today(), e["kind"], e["amount"], e["entry_no"], "Reversal: " + reason, eid, now_iso(), access.uid()))
         rid = cur.lastrowid
         conn.execute("UPDATE debt_entries SET reversed_by = ? WHERE id = ?", (rid, eid))
         after_change(conn, e["debt_id"])

@@ -8,7 +8,7 @@ import re
 import uuid
 from datetime import date
 
-from . import db, validate as v
+from . import access, db, validate as v
 from .db import tx, now_iso, rows, one, get_setting, next_counter
 from .errors import ValidationError, NotFound, Conflict
 from .finance import Ledger, txn_row, KIND_LABELS
@@ -45,13 +45,42 @@ def today():
     return date.today().isoformat()
 
 
+def user_name(conn, uid):
+    """Display name of a staff member for "recorded by" lines (None for records made before staff accounts)."""
+    if not uid:
+        return None
+    r = conn.execute("SELECT display_name, username FROM users WHERE id = ?", (uid,)).fetchone()
+    return (r["display_name"] or r["username"]) if r else None
+
+
+def check_version(conn, table, before, data, what):
+    """Edit-conflict check. The screen sends back the row_version it loaded; if someone else saved the record in the
+    meantime the version has moved on, and this save is refused instead of silently overwriting their changes."""
+    sent = data.get("row_version")
+    if sent is None or sent == "":
+        return
+    try:
+        sent = int(sent)
+    except (TypeError, ValueError):
+        raise ValidationError("Invalid record version", "row_version")
+    if sent == before["row_version"]:
+        return
+    who = conn.execute("SELECT username, display_name FROM users WHERE id = ?", (before["updated_by"],)).fetchone() if before["updated_by"] else None
+    name = (who["display_name"] or who["username"]) if who else "another user"
+    raise Conflict("This %s was changed by %s at %s, after you opened it. Reload to see the latest version, then make your change again."
+                   % (what, name, (before["updated_at"] or "")[:16].replace("T", " ")), "edit_conflict",
+                   details={"table": table, "id": before["id"], "row_version": before["row_version"], "updated_by": name})
+
+
 # ------------------------------------------------------------------ audit
 def audit(conn, entity, entity_id, action, before=None, after=None):
+    who = access.current() or {}
     conn.execute(
-        "INSERT INTO audit_log(at, entity, entity_id, action, before_json, after_json) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO audit_log(at, entity, entity_id, action, before_json, after_json, user_id, username, ip) VALUES (?,?,?,?,?,?,?,?,?)",
         (now_iso(), entity, str(entity_id) if entity_id is not None else None, action,
          json.dumps(before, default=str, sort_keys=True) if before is not None else None,
-         json.dumps(after, default=str, sort_keys=True) if after is not None else None))
+         json.dumps(after, default=str, sort_keys=True) if after is not None else None,
+         who.get("id"), who.get("username"), who.get("ip")))
 
 
 def history(conn, booking_id, action, detail=""):
@@ -214,9 +243,9 @@ def create_customer(conn, data, _in_tx=False):
                            {"id": dup["id"], "name": dup["name"]})
     ts = now_iso()
     with tx(conn):
-        cur = conn.execute("INSERT INTO customers(%s, created_at, updated_at) VALUES (%s, ?, ?)" % (
+        cur = conn.execute("INSERT INTO customers(%s, created_at, updated_at, created_by, updated_by) VALUES (%s, ?, ?, ?, ?)" % (
             ", ".join(CUSTOMER_FIELDS), ", ".join("?" * len(CUSTOMER_FIELDS))),
-            [p[f] for f in CUSTOMER_FIELDS] + [ts, ts])
+            [p[f] for f in CUSTOMER_FIELDS] + [ts, ts, access.uid(), access.uid()])
         cid = cur.lastrowid
         audit(conn, "customer", cid, "create", None, p)
     return cid
@@ -227,14 +256,15 @@ def update_customer(conn, cid, data):
         before = one(conn.execute("SELECT * FROM customers WHERE id = ?", (cid,)))
         if not before:
             raise NotFound("Customer not found")
+        check_version(conn, "customers", before, data, "customer")
         merged = dict(before)
         merged.update({k: data[k] for k in data if k in CUSTOMER_FIELDS})
         p = _customer_payload(merged)
         active = before["active"]
         if "active" in data:
             active = 0 if data["active"] in (False, 0, "0") else 1
-        conn.execute("UPDATE customers SET %s, active = ?, updated_at = ? WHERE id = ?" % ", ".join("%s = ?" % f for f in CUSTOMER_FIELDS),
-                     [p[f] for f in CUSTOMER_FIELDS] + [active, now_iso(), cid])
+        conn.execute("UPDATE customers SET %s, active = ?, updated_at = ?, updated_by = ? WHERE id = ?" % ", ".join("%s = ?" % f for f in CUSTOMER_FIELDS),
+                     [p[f] for f in CUSTOMER_FIELDS] + [active, now_iso(), access.uid(), cid])
         audit(conn, "customer", cid, "update", before, dict(p, active=active))
     return get_customer(conn, cid)
 
@@ -247,7 +277,7 @@ def delete_customer(conn, cid):
         used = conn.execute("SELECT (SELECT COUNT(*) FROM bookings WHERE customer_id = ?) + "
                             "(SELECT COUNT(*) FROM transactions WHERE customer_id = ?)", (cid, cid)).fetchone()[0]
         if used:
-            conn.execute("UPDATE customers SET active = 0, updated_at = ? WHERE id = ?", (now_iso(), cid))
+            conn.execute("UPDATE customers SET active = 0, updated_at = ?, updated_by = ? WHERE id = ?", (now_iso(), access.uid(), cid))
             audit(conn, "customer", cid, "deactivate", c, {"active": 0})
             return {"deactivated": True}
         conn.execute("DELETE FROM customers WHERE id = ?", (cid,))
@@ -337,8 +367,8 @@ def create_supplier(conn, data):
     with tx(conn):
         if conn.execute("SELECT 1 FROM suppliers WHERE name = ? COLLATE NOCASE", (p["name"],)).fetchone():
             raise Conflict("A supplier named '%s' already exists" % p["name"], "duplicate_supplier")
-        cur = conn.execute("INSERT INTO suppliers(%s, created_at, updated_at) VALUES (%s, ?, ?)" % (
-            ", ".join(SUPPLIER_FIELDS), ", ".join("?" * len(SUPPLIER_FIELDS))), [p[f] for f in SUPPLIER_FIELDS] + [ts, ts])
+        cur = conn.execute("INSERT INTO suppliers(%s, created_at, updated_at, created_by, updated_by) VALUES (%s, ?, ?, ?, ?)" % (
+            ", ".join(SUPPLIER_FIELDS), ", ".join("?" * len(SUPPLIER_FIELDS))), [p[f] for f in SUPPLIER_FIELDS] + [ts, ts, access.uid(), access.uid()])
         audit(conn, "supplier", cur.lastrowid, "create", None, p)
     return cur.lastrowid
 
@@ -348,6 +378,7 @@ def update_supplier(conn, sid, data):
         before = one(conn.execute("SELECT * FROM suppliers WHERE id = ?", (sid,)))
         if not before:
             raise NotFound("Supplier not found")
+        check_version(conn, "suppliers", before, data, "supplier")
         merged = dict(before)
         merged.update({k: data[k] for k in data if k in SUPPLIER_FIELDS})
         p = _supplier_payload(merged)
@@ -357,8 +388,8 @@ def update_supplier(conn, sid, data):
         active = before["active"]
         if "active" in data:
             active = 0 if data["active"] in (False, 0, "0") else 1
-        conn.execute("UPDATE suppliers SET %s, active = ?, updated_at = ? WHERE id = ?" % ", ".join("%s = ?" % f for f in SUPPLIER_FIELDS),
-                     [p[f] for f in SUPPLIER_FIELDS] + [active, now_iso(), sid])
+        conn.execute("UPDATE suppliers SET %s, active = ?, updated_at = ?, updated_by = ? WHERE id = ?" % ", ".join("%s = ?" % f for f in SUPPLIER_FIELDS),
+                     [p[f] for f in SUPPLIER_FIELDS] + [active, now_iso(), access.uid(), sid])
         audit(conn, "supplier", sid, "update", before, dict(p, active=active))
     return get_supplier(conn, sid)
 
@@ -371,7 +402,7 @@ def delete_supplier(conn, sid):
         used = conn.execute("SELECT (SELECT COUNT(*) FROM bookings WHERE supplier_id = ?) + "
                             "(SELECT COUNT(*) FROM transactions WHERE supplier_id = ?)", (sid, sid)).fetchone()[0]
         if used:
-            conn.execute("UPDATE suppliers SET active = 0, updated_at = ? WHERE id = ?", (now_iso(), sid))
+            conn.execute("UPDATE suppliers SET active = 0, updated_at = ?, updated_by = ? WHERE id = ?", (now_iso(), access.uid(), sid))
             audit(conn, "supplier", sid, "deactivate", s, {"active": 0})
             return {"deactivated": True}
         conn.execute("DELETE FROM suppliers WHERE id = ?", (sid,))
@@ -456,6 +487,7 @@ def save_account(conn, data, aid=None):
             before = one(conn.execute("SELECT * FROM accounts WHERE id = ?", (aid,)))
             if not before:
                 raise NotFound("Account not found")
+            check_version(conn, "accounts", before, data, "account")
             has_txn = conn.execute("SELECT 1 FROM transactions WHERE account_id = ? OR to_account_id = ? LIMIT 1", (aid, aid)).fetchone()
             if has_txn and cur != before["currency"]:
                 raise ValidationError("Currency cannot be changed after transactions are recorded", "currency")
@@ -463,14 +495,14 @@ def save_account(conn, data, aid=None):
                 raise Conflict("Changing the opening balance of an account with transactions changes every running balance. Confirm to proceed.",
                                "confirm_opening_change")
             conn.execute("UPDATE accounts SET name=?, kind=?, account_type=?, bank_name=?, account_last4=?, currency=?, opening_balance=?, "
-                         "opening_date=?, details=?, active=?, updated_at=? WHERE id=?",
-                         (name, kind, acc_type, bank_name, last4, cur, opening, opening_date, details, active, ts, aid))
+                         "opening_date=?, details=?, active=?, updated_at=?, updated_by=? WHERE id=?",
+                         (name, kind, acc_type, bank_name, last4, cur, opening, opening_date, details, active, ts, access.uid(), aid))
             audit(conn, "account", aid, "update", before, {"name": name, "kind": kind, "account_type": acc_type, "bank_name": bank_name,
                                                           "currency": cur, "opening_balance": opening, "opening_date": opening_date, "active": active})
         else:
             c = conn.execute("INSERT INTO accounts(name, kind, account_type, bank_name, account_last4, currency, opening_balance, opening_date, "
-                             "details, active, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                             (name, kind, acc_type, bank_name, last4, cur, opening, opening_date, details, active, ts, ts))
+                             "details, active, created_at, updated_at, created_by, updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                             (name, kind, acc_type, bank_name, last4, cur, opening, opening_date, details, active, ts, ts, access.uid(), access.uid()))
             aid = c.lastrowid
             audit(conn, "account", aid, "create", None, {"name": name, "kind": kind, "account_type": acc_type, "bank_name": bank_name,
                                                         "currency": cur, "opening_balance": opening})
@@ -485,7 +517,7 @@ def set_account_active(conn, aid, active):
         active = 1 if active else 0
         if not active and conn.execute("SELECT COUNT(*) FROM accounts WHERE active = 1 AND id <> ?", (aid,)).fetchone()[0] == 0:
             raise ValidationError("Keep at least one active account")
-        conn.execute("UPDATE accounts SET active = ?, updated_at = ? WHERE id = ?", (active, now_iso(), aid))
+        conn.execute("UPDATE accounts SET active = ?, updated_at = ?, updated_by = ? WHERE id = ?", (active, now_iso(), access.uid(), aid))
         audit(conn, "account", aid, "activate" if active else "deactivate", {"active": before["active"]}, {"active": active})
     return aid
 
@@ -675,6 +707,7 @@ def save_booking(conn, data, bid=None):
             before = one(conn.execute("SELECT * FROM bookings WHERE id = ?", (bid,)))
             if not before:
                 raise NotFound("Booking not found")
+            check_version(conn, "bookings", before, data, "booking")
         customer_id = _resolve_customer(conn, data)
         supplier_id = v.i(data, "supplier_id")
         if supplier_id and not conn.execute("SELECT 1 FROM suppliers WHERE id = ?", (supplier_id,)).fetchone():
@@ -756,8 +789,8 @@ def save_booking(conn, data, bid=None):
         fields.update(amounts)
         fields.update(tax)
         if before:
-            conn.execute("UPDATE bookings SET %s, updated_at = ? WHERE id = ?" % ", ".join("%s = ?" % k for k in fields),
-                         list(fields.values()) + [ts, bid])
+            conn.execute("UPDATE bookings SET %s, updated_at = ?, updated_by = ? WHERE id = ?" % ", ".join("%s = ?" % k for k in fields),
+                         list(fields.values()) + [ts, access.uid(), bid])
             conn.execute("DELETE FROM booking_passengers WHERE booking_id = ?", (bid,))
             conn.execute("DELETE FROM booking_segments WHERE booking_id = ?", (bid,))
         else:
@@ -765,8 +798,8 @@ def save_booking(conn, data, bid=None):
             n = next_counter(conn, "booking-" + yy)
             ref = "%s%s-%05d" % (get_setting(conn, "booking_prefix", "BK-") or "BK-", yy, n)
             fields["ref"] = ref
-            cur = conn.execute("INSERT INTO bookings(%s, created_at, updated_at) VALUES (%s, ?, ?)" % (
-                ", ".join(fields), ", ".join("?" * len(fields))), list(fields.values()) + [ts, ts])
+            cur = conn.execute("INSERT INTO bookings(%s, created_at, updated_at, created_by, updated_by) VALUES (%s, ?, ?, ?, ?)" % (
+                ", ".join(fields), ", ".join("?" * len(fields))), list(fields.values()) + [ts, ts, access.uid(), access.uid()])
             bid = cur.lastrowid
         for p in pax:
             conn.execute("INSERT INTO booking_passengers(booking_id, seq, title, name, pax_type, ticket_number, passport_no, notes) "
@@ -807,7 +840,7 @@ def set_booking_status(conn, bid, status):
             committed = 0
         elif status in ("cancelled", "refunded") and b["committed"] and b["status"] not in ("cancelled", "refunded"):
             raise ValidationError("Use 'Cancel / Refund' so credits and charges are recorded.", "status")
-        conn.execute("UPDATE bookings SET status = ?, committed = ?, updated_at = ? WHERE id = ?", (status, committed, now_iso(), bid))
+        conn.execute("UPDATE bookings SET status = ?, committed = ?, updated_at = ?, updated_by = ? WHERE id = ?", (status, committed, now_iso(), access.uid(), bid))
         history(conn, bid, "status", "%s -> %s" % (b["status"], status))
         audit(conn, "booking", bid, "status", {"status": b["status"], "committed": b["committed"]}, {"status": status, "committed": committed})
     return bid
@@ -946,15 +979,15 @@ def create_adjustment(conn, bid, data):
         ts = now_iso()
         cur = conn.execute(
             "INSERT INTO booking_adjustments(adj_no, booking_id, adj_date, kind, sign, exchange_rate, customer_credit, customer_credit_tax, "
-            "supplier_credit, commission_reversal, extra_customer_charge, extra_supplier_charge, notes, idem_key, created_at) "
-            "VALUES (?,?,?,?,1,?,?,?,?,?,?,?,?,?,?)",
+            "supplier_credit, commission_reversal, extra_customer_charge, extra_supplier_charge, notes, idem_key, created_at, created_by) "
+            "VALUES (?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?)",
             (adj_no, bid, adj_date, kind, rate, p["customer_credit"], p["customer_credit_tax"], p["supplier_credit"],
-             p["commission_reversal"], p["extra_customer_charge"], p["extra_supplier_charge"], v.s(data, "notes", 2000), idem, ts))
+             p["commission_reversal"], p["extra_customer_charge"], p["extra_supplier_charge"], v.s(data, "notes", 2000), idem, ts, access.uid()))
         aid = cur.lastrowid
         history(conn, bid, "adjustment", "%s %s recorded" % (adj_no, kind.replace("_", " ")))
         audit(conn, "adjustment", aid, "create", None, dict(p, kind=kind, adj_date=adj_date, booking_id=bid))
         if new_status and new_status != b["status"]:
-            conn.execute("UPDATE bookings SET status = ?, updated_at = ? WHERE id = ?", (new_status, ts, bid))
+            conn.execute("UPDATE bookings SET status = ?, updated_at = ?, updated_by = ? WHERE id = ?", (new_status, ts, access.uid(), bid))
             history(conn, bid, "status", "%s -> %s" % (b["status"], new_status))
             audit(conn, "booking", bid, "status", {"status": b["status"]}, {"status": new_status})
     return aid
@@ -976,11 +1009,11 @@ def reverse_adjustment(conn, aid, data):
         reason = v.s(data, "reason", 500) or "Reversal"
         cur = conn.execute(
             "INSERT INTO booking_adjustments(adj_no, booking_id, adj_date, kind, sign, exchange_rate, customer_credit, customer_credit_tax, "
-            "supplier_credit, commission_reversal, extra_customer_charge, extra_supplier_charge, notes, reversal_of, created_at) "
-            "VALUES (?,?,?,?,-1,?,?,?,?,?,?,?,?,?,?)",
+            "supplier_credit, commission_reversal, extra_customer_charge, extra_supplier_charge, notes, reversal_of, created_at, created_by) "
+            "VALUES (?,?,?,?,-1,?,?,?,?,?,?,?,?,?,?,?)",
             ("ADJ-%05d" % n, a["booking_id"], v.d(data, "date") or today(), a["kind"], a["exchange_rate"], a["customer_credit"],
              a["customer_credit_tax"], a["supplier_credit"], a["commission_reversal"], a["extra_customer_charge"],
-             a["extra_supplier_charge"], "Reversal of %s: %s" % (a["adj_no"], reason), aid, ts))
+             a["extra_supplier_charge"], "Reversal of %s: %s" % (a["adj_no"], reason), aid, ts, access.uid()))
         rid = cur.lastrowid
         conn.execute("UPDATE booking_adjustments SET reversed_by = ? WHERE id = ?", (rid, aid))
         history(conn, a["booking_id"], "adjustment", "%s reversed (%s)" % (a["adj_no"], reason))
@@ -1197,10 +1230,10 @@ def create_transaction(conn, data):
         cur = conn.execute(
             "INSERT INTO transactions(txn_no, uid, idem_key, txn_date, kind, sign, amount, currency, exchange_rate, rate_date, base_amount, "
             "account_id, to_account_id, to_amount, method, reference, category, customer_id, supplier_id, booking_id, is_direct, payee, notes, "
-            "debt_id, created_at, updated_at) VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "debt_id, created_at, updated_at, created_by) VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (txn_no, str(uuid.uuid4()), idem, txn_date, kind, amount, currency, rate,
              v.d(data, "rate_date") or (txn_date if rate != "1" else None), base_amount, account_id, to_account_id, to_amount,
-             method, reference, category, customer_id, supplier_id, booking_id, is_direct, payee, notes, debt_id, ts, ts))
+             method, reference, category, customer_id, supplier_id, booking_id, is_direct, payee, notes, debt_id, ts, ts, access.uid()))
         tid = cur.lastrowid
         if debt_id:
             from . import debts
@@ -1245,11 +1278,11 @@ def reverse_transaction(conn, tid, data):
         cur = conn.execute(
             "INSERT INTO transactions(txn_no, uid, idem_key, txn_date, kind, sign, amount, currency, exchange_rate, rate_date, base_amount, "
             "account_id, to_account_id, to_amount, method, reference, category, customer_id, supplier_id, booking_id, is_direct, payee, notes, "
-            "debt_id, reversal_of, created_at, updated_at) VALUES (?,?,NULL,?,?,-1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "debt_id, reversal_of, created_at, updated_at, created_by) VALUES (?,?,NULL,?,?,-1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (txn_no, str(uuid.uuid4()), rdate, t["kind"], t["amount"], t["currency"], t["exchange_rate"], t["rate_date"],
              t["base_amount"], t["account_id"], t["to_account_id"], t["to_amount"], t["method"], t["reference"], t["category"],
              t["customer_id"], t["supplier_id"], t["booking_id"], t["is_direct"], t["payee"],
-             "Reversal of %s: %s" % (t["txn_no"], reason), t.get("debt_id"), tid, ts, ts))
+             "Reversal of %s: %s" % (t["txn_no"], reason), t.get("debt_id"), tid, ts, ts, access.uid()))
         rid = cur.lastrowid
         for a in rows(conn.execute("SELECT * FROM allocations WHERE txn_id = ?", (tid,))):
             conn.execute("INSERT INTO allocations(txn_id, booking_id, amount, created_at) VALUES (?,?,?,?)", (rid, a["booking_id"], a["amount"], ts))
@@ -1507,6 +1540,8 @@ def get_transaction(conn, tid):
     if not t:
         raise NotFound("Transaction not found")
     r = txn_row(L, t)
+    r["created_by"] = t.get("created_by")
+    r["created_by_name"] = user_name(conn, t.get("created_by"))
     r["documents"] = rows(conn.execute("SELECT id, original_name, mime, size, label, uploaded_at FROM documents WHERE transaction_id = ? AND deleted = 0", (t["id"],)))
     r["audit"] = list_audit(conn, "transaction", t["id"])
     # open bookings for allocation
@@ -1608,10 +1643,10 @@ def create_invoice(conn, bid, data):
                "business": _business_snapshot(conn),
                "booking": {"ref": b["ref"], "pnr": b["pnr"], "travel_date": b["travel_date"], "place_of_supply": b["place_of_supply"],
                            "passengers": pax, "segments": segs}}
-        cur = conn.execute("INSERT INTO invoices(number, doc_type, booking_id, customer_id, issue_date, currency, lines_json, tax_json, subtotal, tax_total, total, notes, created_at) "
-                           "VALUES (?, 'invoice', ?,?,?,?,?,?,?,?,?,?,?)",
+        cur = conn.execute("INSERT INTO invoices(number, doc_type, booking_id, customer_id, issue_date, currency, lines_json, tax_json, subtotal, tax_total, total, notes, created_at, created_by) "
+                           "VALUES (?, 'invoice', ?,?,?,?,?,?,?,?,?,?,?,?)",
                            (number, bid, b["customer_id"], issue_date, b["currency"], json.dumps(doc, default=str), json.dumps(taxes),
-                            subtotal, tax_total, subtotal + tax_total, v.s(data, "notes", 1000), now_iso()))
+                            subtotal, tax_total, subtotal + tax_total, v.s(data, "notes", 1000), now_iso(), access.uid()))
         iid = cur.lastrowid
         history(conn, bid, "invoice", "Invoice %s issued" % number)
         audit(conn, "invoice", iid, "create", None, {"number": number, "total": subtotal + tax_total})
@@ -1643,10 +1678,10 @@ def create_credit_note(conn, aid, data):
         doc = {"lines": lines, "customer": {k: cust.get(k) for k in ("name", "phone", "email", "address", "city", "state", "gstin")},
                "business": _business_snapshot(conn), "against": inv["number"] if inv else None,
                "booking": {"ref": b["ref"], "pnr": b["pnr"], "travel_date": b["travel_date"], "place_of_supply": b["place_of_supply"]}}
-        cur = conn.execute("INSERT INTO invoices(number, doc_type, booking_id, customer_id, adjustment_id, related_invoice_id, issue_date, currency, lines_json, tax_json, subtotal, tax_total, total, notes, created_at) "
-                           "VALUES (?, 'credit_note', ?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        cur = conn.execute("INSERT INTO invoices(number, doc_type, booking_id, customer_id, adjustment_id, related_invoice_id, issue_date, currency, lines_json, tax_json, subtotal, tax_total, total, notes, created_at, created_by) "
+                           "VALUES (?, 'credit_note', ?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                            (number, b["id"], b["customer_id"], aid, inv["id"] if inv else None, issue_date, b["currency"], json.dumps(doc, default=str),
-                            json.dumps(taxes), sub, a["customer_credit_tax"], a["customer_credit"], v.s(data, "notes", 1000), now_iso()))
+                            json.dumps(taxes), sub, a["customer_credit_tax"], a["customer_credit"], v.s(data, "notes", 1000), now_iso(), access.uid()))
         iid = cur.lastrowid
         history(conn, b["id"], "credit_note", "Credit note %s issued" % number)
         audit(conn, "invoice", iid, "create", None, {"number": number, "total": a["customer_credit"], "type": "credit_note"})

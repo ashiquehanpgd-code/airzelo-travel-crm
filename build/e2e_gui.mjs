@@ -50,6 +50,24 @@ try {
   if (!info.dataRoot.startsWith(userData)) throw new Error('not using the temporary data folder');
   const empty = await launcher.evaluate('document.querySelector("#agencies").innerText');
   console.log('chooser (empty):', empty.trim().slice(0, 60));
+  // ---- cloud workspaces: https only, and an unreachable server sends the user back with the reason (no saving offline)
+  const ws = await launcher.evaluate(`(async () => {
+    const bad = await window.desktop.addWorkspace({ name: 'Plain http', url: 'http://crm.example.invalid' });
+    const good = await window.desktop.addWorkspace({ name: 'Office cloud', url: 'crm.example.invalid' });
+    return { bad: bad.ok, good: good.ok && good.workspace.origin, list: (await window.desktop.listWorkspaces()).map((w) => w.host) };
+  })()`);
+  console.log('cloud workspace: http refused', !ws.bad, '| added', ws.good, '| listed', ws.list.join(','));
+  if (ws.bad || ws.good !== 'https://crm.example.invalid' || ws.list.join() !== 'crm.example.invalid') throw new Error('workspace rules not applied');
+  await launcher.evaluate('renderWorkspaces().then(() => { document.querySelector("[data-open-ws]").click(); return true; })');
+  let notice = '';
+  for (let i = 0; i < 80 && !notice; i++) {
+    await sleep(250);
+    try { notice = await launcher.evaluate('location.search.includes("notice") && document.readyState === "complete" ? document.querySelector("#notice").textContent : ""'); } catch (_) { /* reloading */ }
+  }
+  console.log('unreachable workspace notice:', notice.slice(0, 90));
+  if (!/Cannot reach crm\.example\.invalid/.test(notice)) throw new Error('no clear message for an unreachable workspace');
+  for (let i = 0; i < 40 && !(await launcher.evaluate('!!window.desktop && !!document.querySelector("#new-btn")')); i++) await sleep(250);
+
   // real form: fill and submit like a user
   const created = await launcher.evaluate(`(async () => {
     document.querySelector('#new-btn').click();

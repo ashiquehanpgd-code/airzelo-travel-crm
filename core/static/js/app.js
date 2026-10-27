@@ -32,13 +32,19 @@
     [/^\/audit$/, "audit"],
     [/^\/setup$/, "setup"],
   ];
+  // [href, icon, label, permission] - items the signed-in role cannot use are not shown (the server refuses them anyway)
   const NAV = [
-    ["Overview", [["#/dashboard", "dashboard", "Dashboard"], ["#/pnr", "search", "PNR search"]]],
-    ["Operations", [["#/bookings", "ticket", "Bookings"], ["#/customers", "users", "Customers"], ["#/suppliers", "building", "Suppliers"]]],
-    ["Money", [["#/finance/receipts", "arrowIn", "Receipts"], ["#/finance/payments", "arrowOut", "Supplier payments"], ["#/finance/refunds", "refund", "Refunds"],
-      ["#/finance/expenses", "expense", "Expenses"], ["#/accounts", "bank", "Cash & bank"], ["#/reports/cashbook", "book", "Cashbook"], ["#/invoices", "invoice", "Invoices"], ["#/debts", "coins", "Debts & loans"]]],
-    ["Insights", [["#/reports", "chart", "Reports"], ["#/audit", "history", "Audit trail"], ["#/settings", "settings", "Settings"]]],
+    ["Overview", [["#/dashboard", "dashboard", "Dashboard", "reports"], ["#/pnr", "search", "PNR search", "bookings.view"]]],
+    ["Operations", [["#/bookings", "ticket", "Bookings", "bookings.view"], ["#/customers", "users", "Customers", "bookings.view"], ["#/suppliers", "building", "Suppliers", "bookings.view"]]],
+    ["Money", [["#/finance/receipts", "arrowIn", "Receipts", "money.view"], ["#/finance/payments", "arrowOut", "Supplier payments", "money.view"], ["#/finance/refunds", "refund", "Refunds", "money.view"],
+      ["#/finance/expenses", "expense", "Expenses", "money.view"], ["#/accounts", "bank", "Cash & bank", "money.view"], ["#/reports/cashbook", "book", "Cashbook", "reports"], ["#/invoices", "invoice", "Invoices", "money.view"], ["#/debts", "coins", "Debts & loans", "money.view"]]],
+    ["Insights", [["#/reports", "chart", "Reports", "reports"], ["#/audit", "history", "Audit trail", "reports"], ["#/settings/users", "users", "Staff & roles", "users"], ["#/settings", "settings", "Settings", "signed_in"]]],
   ];
+  // pages a role may open (the rest show "not available for your role")
+  const PAGE_PERM = { dashboard: "reports", pnr: "bookings.view", bookings: "bookings.view", bookingForm: "bookings", booking: "bookings.view",
+    customers: "bookings.view", customer: "bookings.view", suppliers: "bookings.view", supplier: "bookings.view", finance: "money.view",
+    accounts: "money.view", reconcile: "money", invoices: "money.view", debts: "money.view", debt: "money.view", reports: "reports",
+    audit: "reports", settings: "signed_in", setup: "settings" };
 
   function parseHash() {
     const raw = (location.hash || "#/").slice(1);
@@ -65,6 +71,7 @@
       const m = rx.exec(path);
       if (m) { page = name; args = m.slice(1); break; }
     }
+    if (page === "dashboard" && !QT.can("reports")) { location.hash = "#/bookings"; return; }   // booking staff start at bookings
     $$(".dd-menu").forEach((m) => m.remove());
     $$(".chart-tip").forEach((m) => m.remove());
     $(".shell") && $(".shell").classList.remove("nav-open");
@@ -77,6 +84,11 @@
     const content = $("#content");
     if (!page || !QT.pages[page]) {
       content.innerHTML = '<div class="empty-state">' + icon("alert") + "<h4>Page not found</h4><a href=\"#/dashboard\">Go to dashboard</a></div>";
+      return;
+    }
+    if (PAGE_PERM[page] && !QT.can(PAGE_PERM[page])) {
+      const me = QT.me();
+      content.innerHTML = h`<div class="empty-state">${QT.raw(icon("lock"))}<h4>Not available for your role</h4><div>${me.display_name || me.username} is signed in as ${QT.state.meta.roles[me.role]}. Ask the owner or an admin if you need this page.</div></div>`.html;
       return;
     }
     const token = ++navToken;
@@ -100,10 +112,13 @@
   // ---------------------------------------------------------------- shell
   function renderShell() {
     const s = QT.state.meta.settings;
+    const me = QT.me();
     let nav = "";
     NAV.forEach(([label, items]) => {
       nav += '<div class="nav-label">' + esc(label) + '</div><nav class="nav">';
-      items.forEach(([href, ic, text]) => { nav += '<a href="' + href + '">' + icon(ic) + "<span>" + esc(text) + "</span></a>"; });
+      const allowed = items.filter((it) => QT.can(it[3]));
+      if (!allowed.length) { nav = nav.slice(0, nav.lastIndexOf('<div class="nav-label">')); return; }
+      allowed.forEach(([href, ic, text]) => { nav += '<a href="' + href + '">' + icon(ic) + "<span>" + esc(text) + "</span></a>"; });
       nav += "</nav>";
     });
     $("#app").innerHTML = h`<div class="shell">
@@ -111,9 +126,10 @@
         <div class="brand">${QT.raw(s.logo_file ? '<div class="brand-mark logo"><img src="' + esc(QT.logoUrl(s.logo_file)) + '" alt=""></div>' : '<div class="brand-mark">' + icon("plane") + "</div>")}<div><div class="brand-name">${s.business_name || "Travel Agency"}</div><div class="brand-sub">Travel CRM</div></div></div>
         ${QT.raw(nav)}
         <div class="sidebar-foot">
+          <a class="whoami" href="#/settings/security" title="My account: change your password"><b>${me.display_name || me.username}</b><span>${QT.state.meta.roles[me.role]} · <span class="mode-chip ${QT.cloud() ? "cloud" : ""}">${QT.cloud() ? "Cloud · shared office" : "Local · " + QT.os.computer}</span></span></a>
           <button type="button" data-theme-toggle>${QT.raw(icon(QT.isDark() ? "sun" : "moon"))}<span>${QT.isDark() ? "Light mode" : "Dark mode"}</span></button>
           <button type="button" data-logout>${QT.raw(icon("logout"))}<span>Sign out</span></button>
-          <div>v${QT.state.meta.version} · Private · ${QT.os.computer} only</div>
+          <div>v${QT.state.meta.version} · ${QT.cloud() ? location.host : "Private · " + QT.os.computer + " only"}</div>
         </div>
       </aside>
       <div class="main">
@@ -142,16 +158,20 @@
       QT.state.authed = false;
       showLogin();
     };
-    QT.dropdown($("[data-quick]"), [
-      { label: "New booking", icon: "ticket", onClick: () => QT.go("#/bookings/new") },
-      { label: "Customer receipt", icon: "arrowIn", onClick: () => QT.txnForm({ kind: "customer_receipt" }) },
-      { label: "Supplier payment", icon: "arrowOut", onClick: () => QT.txnForm({ kind: "supplier_payment" }) },
-      { label: "Expense", icon: "expense", onClick: () => QT.txnForm({ kind: "expense" }) },
+    const quick = [
+      QT.can("bookings") && { label: "New booking", icon: "ticket", onClick: () => QT.go("#/bookings/new") },
+      QT.can("receipts") && { label: "Customer receipt", icon: "arrowIn", onClick: () => QT.txnForm({ kind: "customer_receipt" }) },
+      QT.can("money") && { label: "Supplier payment", icon: "arrowOut", onClick: () => QT.txnForm({ kind: "supplier_payment" }) },
+      QT.can("money") && { label: "Expense", icon: "expense", onClick: () => QT.txnForm({ kind: "expense" }) },
       "-",
-      { label: "New customer", icon: "user", onClick: () => QT.customerForm() },
-      { label: "New supplier", icon: "building", onClick: () => QT.supplierForm() },
-      { label: "Transfer between accounts", icon: "swap", onClick: () => QT.txnForm({ kind: "transfer" }) },
-    ]);
+      QT.can("bookings") && { label: "New customer", icon: "user", onClick: () => QT.customerForm() },
+      QT.can("bookings") && { label: "New supplier", icon: "building", onClick: () => QT.supplierForm() },
+      QT.can("money") && { label: "Transfer between accounts", icon: "swap", onClick: () => QT.txnForm({ kind: "transfer" }) },
+    ].filter(Boolean);
+    if (quick[0] === "-") quick.shift();
+    if (quick[quick.length - 1] === "-") quick.pop();
+    if (quick.length) QT.dropdown($("[data-quick]"), quick);
+    else $("[data-quick]").remove();
     setupSearch();
   }
 
@@ -232,8 +252,8 @@
         <div class="brand" style="padding:0"><div class="brand-mark">${QT.raw(icon("plane"))}</div><div><div class="brand-name">AirZelo</div><div class="brand-sub">Travel agency desk</div></div></div>
         ${QT.raw('<svg class="plane" viewBox="0 0 24 24" fill="#fff">' + '<path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>')}
         <div><h2>Every PNR, payment and rupee of margin — in one place.</h2>
-        <p style="margin-top:12px">Bookings, customers, supplier balances, refunds and profit, stored privately on ${QT.os.computer}.</p></div>
-        <div class="small" style="color:#9FB3EA">${QT.raw(icon("lock", "").replace("<svg", '<svg style="width:14px;height:14px;vertical-align:-2px"'))} Runs locally · not reachable from other devices</div>
+        <p style="margin-top:12px">${QT.state.mode === "cloud" ? "Bookings, customers, supplier balances, refunds and profit, shared securely by your office team." : "Bookings, customers, supplier balances, refunds and profit, stored privately on " + QT.os.computer + "."}</p></div>
+        <div class="small" style="color:#9FB3EA">${QT.raw(icon("lock", "").replace("<svg", '<svg style="width:14px;height:14px;vertical-align:-2px"'))} ${QT.state.mode === "cloud" ? "Cloud workspace · " + location.host + " · encrypted connection (HTTPS)" : "Runs locally · not reachable from other devices"}</div>
       </div>
       <div class="auth-form">${QT.raw(formHtml)}</div>
     </div>`.html;
@@ -244,7 +264,7 @@
       <div class="f s12"><label>Username</label><input class="inp" name="username" autocomplete="username" required></div>
       <div class="f s12"><label>Password</label><input class="inp" type="password" name="password" autocomplete="current-password" required></div>
       <button class="btn primary" type="submit">Sign in</button>
-      <div class="muted small">Forgot your password? Stop the app and run <span class="mono">python3 run.py --reset-password</span> on ${QT.os.computer}.</div>
+      <div class="muted small">${QT.raw(QT.state.mode === "cloud" ? "Forgot your password? Ask the owner or an admin to set a temporary one for you." : "Forgot your password? Stop the app and run <span class=\"mono\">python3 run.py --reset-password</span> on " + esc(QT.os.computer) + ".")}</div>
     </form>`.html);
     const f = $("#login");
     $("[name=username]", f).focus();
@@ -280,6 +300,25 @@
       catch (err) { QT.showErr(f, err); } finally { btn.disabled = false; }
     };
   }
+  // a temporary password set by the owner or an admin must be replaced before anything else
+  function showNewPassword(user) {
+    authLayout(h`<form id="newpw" autocomplete="off">
+      <div><h1>Choose your own password</h1><div class="muted">${user.display_name || user.username}, your account has a temporary password. Choose a new one to continue.</div></div>
+      <div class="f s12"><label>Temporary password</label><input class="inp" type="password" name="current_password" autocomplete="current-password" required></div>
+      <div class="f s12"><label>New password</label><input class="inp" type="password" name="new_password" autocomplete="new-password" required><span class="hint">At least 10 characters, mixing letters, numbers or symbols.</span></div>
+      <div class="f s12"><label>Repeat new password</label><input class="inp" type="password" name="new_password2" autocomplete="new-password" required></div>
+      <button class="btn primary" type="submit">Save and sign in again</button>
+    </form>`.html);
+    const f = $("#newpw");
+    $("[name=current_password]", f).focus();
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const d = QT.formData(f);
+      if (d.new_password !== d.new_password2) { QT.showErr(f, { message: "New passwords do not match", field: "new_password2" }); return; }
+      try { await QT.post("/api/auth/password", d); QT.toast("Password changed. Please sign in with your new password."); showLogin(); }
+      catch (err) { QT.showErr(f, err); }
+    };
+  }
   QT.onUnauthorized = function () {
     if (!QT.state.authed) return;
     QT.state.authed = false;
@@ -295,8 +334,10 @@
       $("#app").innerHTML = h`<div class="empty-state" style="padding-top:20vh">${QT.raw(icon("alert"))}<h4>Cannot reach AirZelo</h4><div>Start the app, then reload this page.</div></div>`.html;
       return;
     }
+    QT.state.mode = st.mode;
     if (st.setup_needed) return showSetup();
     if (!st.logged_in) return showLogin();
+    if (st.user && st.user.must_change_password) return showNewPassword(st.user);
     QT.state.authed = true;
     await QT.loadMeta();
     renderShell();

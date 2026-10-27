@@ -2,6 +2,12 @@
 // Shows the agency (company file) chooser, starts the bundled Python core for the chosen agency on a free
 // localhost port, and shows the CRM in the window. Each agency is a separate folder with its own database,
 // attachments and backups, so agencies never share data.
+//
+// Two clearly separate ways to work:
+//   * Local company file - the core runs on this computer; works offline; only this computer sees the data.
+//   * Cloud workspace    - the office's shared server (https:// only); every signed-in colleague sees the same
+//                          books; needs an internet connection, and nothing is saved while it is down.
+// The two are never merged or synchronised.
 'use strict';
 const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
 const { spawn } = require('child_process');
@@ -95,6 +101,55 @@ async function createAgency(req) {
   return { ok: true, agency: meta };
 }
 
+// ------------------------------------------------------------ cloud workspaces (shared office server)
+const workspacesFile = () => path.join(app.getPath('userData'), 'workspaces.json');
+let cloud = null; // the open cloud workspace { id, name, origin }
+
+function readWorkspaces() {
+  try { return JSON.parse(fs.readFileSync(workspacesFile(), 'utf8')).filter((w) => w && w.id && w.origin); } catch (_) { return []; }
+}
+function writeWorkspaces(list) {
+  fs.mkdirSync(path.dirname(workspacesFile()), { recursive: true });
+  fs.writeFileSync(workspacesFile(), JSON.stringify(list, null, 2));
+}
+// https only; plain http is accepted for a loopback test server in automated tests (TACRM_USER_DATA) and nowhere else
+function workspaceOrigin(raw) {
+  let u;
+  try { u = new URL(/^[a-z]+:\/\//i.test(String(raw || '').trim()) ? String(raw).trim() : 'https://' + String(raw || '').trim()); } catch (_) { return null; }
+  const testLoopback = !!process.env.TACRM_USER_DATA && u.protocol === 'http:' && u.hostname === '127.0.0.1';
+  if ((u.protocol !== 'https:' && !testLoopback) || u.username || u.password) return null;
+  return u.origin;
+}
+function addWorkspace(req) {
+  const origin = workspaceOrigin(req.url);
+  if (!origin) return { ok: false, error: 'Enter the address your owner or IT gave you, starting with https:// (for example https://crm.youragency.in).' };
+  const name = String(req.name || '').trim().slice(0, 80) || new URL(origin).hostname;
+  const list = readWorkspaces();
+  if (list.some((w) => w.origin === origin)) return { ok: false, error: 'This cloud workspace is already in the list.' };
+  const w = { id: crypto.randomUUID(), name, origin, added_at: new Date().toISOString() };
+  writeWorkspaces([...list, w]);
+  return { ok: true, workspace: w };
+}
+async function openWorkspace(id) {
+  const list = readWorkspaces();
+  const w = list.find((x) => x.id === id);
+  if (!w) return { ok: false, error: 'Workspace not found' };
+  await stopCore();
+  cloud = w;
+  w.last_opened = new Date().toISOString();
+  writeWorkspaces(list);
+  win.setTitle(`${w.name} — Cloud — ${PRODUCT}`);
+  try {
+    await win.loadURL(w.origin + '/');
+  } catch (e) {
+    cloud = null;
+    log('workspace unreachable', w.origin, e.message);
+    showLauncher(`Cannot reach ${new URL(w.origin).host}. Check the internet connection and try again. While the connection is down nothing can be saved to the shared books; a local company file still works offline.`);
+    return { ok: false, error: 'unreachable' };
+  }
+  return { ok: true };
+}
+
 // ------------------------------------------------------------ core process for the open agency
 let core = null; // { proc, port, agency }
 let win = null;
@@ -158,6 +213,7 @@ async function openAgency(id) {
   const agency = readAgencies().find((a) => a.id === id);
   if (!agency) return { ok: false, error: 'Agency not found' };
   await stopCore();
+  cloud = null;
   try {
     core = await startCore(agency);
   } catch (e) {
@@ -166,19 +222,20 @@ async function openAgency(id) {
   }
   agency.last_opened = new Date().toISOString();
   fs.writeFileSync(path.join(dataRoot(), id, 'agency.json'), JSON.stringify(agency, null, 2));
-  win.setTitle(`${agency.name} — ${PRODUCT}`);
+  win.setTitle(`${agency.name} — Local — ${PRODUCT}`);
   await win.loadURL(`http://127.0.0.1:${core.port}/`);
   return { ok: true };
 }
 
 // ------------------------------------------------------------ windows
-function showLauncher() {
+function showLauncher(notice) {
   win.setTitle(PRODUCT);
-  win.loadFile(path.join(__dirname, 'launcher', 'index.html'));
+  win.loadFile(path.join(__dirname, 'launcher', 'index.html'), notice ? { query: { notice } } : undefined);
 }
 
 function allowedUrl(url) {
   if (url.startsWith('file://')) return url.includes('/launcher/');
+  if (cloud) return url.startsWith(cloud.origin + '/');
   return core ? url.startsWith(`http://127.0.0.1:${core.port}/`) : false;
 }
 
@@ -196,6 +253,19 @@ function createWindow() {
   win.webContents.on('will-navigate', (e, url) => {
     if (!allowedUrl(url)) { e.preventDefault(); if (/^https:\/\//.test(url)) shell.openExternal(url); }
   });
+  // a cloud workspace that stops answering (reload without internet): back to the chooser with the reason
+  win.webContents.on('did-fail-load', (e, code, desc, url, isMainFrame) => {
+    if (!cloud || !isMainFrame || code === -3) return; // -3: navigation replaced, not a failure
+    const host = new URL(cloud.origin).host;
+    cloud = null;
+    showLauncher(`Lost the connection to ${host} (${desc}). Nothing was saved after the connection dropped. Open the workspace again when the internet is back.`);
+  });
+  // PDFs and other downloads: the save dialog starts in the agency's (or workspace's) Tickets folder on this computer
+  win.webContents.session.on('will-download', (e, item) => {
+    const where = cloud ? ticketDir(cloud.name) : core ? ticketDir(core.agency.name) : app.getPath('downloads');
+    try { fs.mkdirSync(where, { recursive: true }); } catch (_) { /* the dialog falls back to its own folder */ }
+    item.setSaveDialogOptions({ defaultPath: path.join(where, item.getFilename()) });
+  });
   showLauncher();
 }
 
@@ -205,7 +275,7 @@ function buildMenu() {
     {
       label: 'File',
       submenu: [
-        { label: 'Switch agency…', accelerator: 'CmdOrCtrl+Shift+A', click: async () => { await stopCore(); showLauncher(); } },
+        { label: 'Switch agency or workspace…', accelerator: 'CmdOrCtrl+Shift+A', click: async () => { await stopCore(); cloud = null; showLauncher(); } },
         { label: 'Show data folder', click: () => shell.openPath(dataRoot()) },
         { type: 'separator' },
         process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' },
@@ -228,6 +298,10 @@ function handle(name, fn) {
 handle('agencies:list', () => readAgencies().map((a) => ({ id: a.id, name: a.name, created_at: a.created_at, last_opened: a.last_opened })));
 handle('agencies:create', (req) => createAgency(req || {}));
 handle('agencies:open', (id) => openAgency(String(id)));
+handle('workspaces:list', () => readWorkspaces().map((w) => ({ id: w.id, name: w.name, host: new URL(w.origin).host, last_opened: w.last_opened })));
+handle('workspaces:add', (req) => addWorkspace(req || {}));
+handle('workspaces:open', (id) => openWorkspace(String(id)));
+handle('workspaces:remove', (id) => { writeWorkspaces(readWorkspaces().filter((w) => w.id !== String(id))); return { ok: true }; });
 handle('app:info', () => ({ product: PRODUCT, version: app.getVersion(), platform: process.platform, arch: process.arch, dataRoot: dataRoot() }));
 handle('app:showData', () => shell.openPath(dataRoot()));
 
