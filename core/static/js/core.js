@@ -329,6 +329,12 @@
     QT.applyBranding();
     return QT.state.meta;
   };
+  // the computer the user is sitting at (the server may be another machine in cloud mode)
+  QT.os = (function () {
+    const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+    return { mac, files: mac ? "Finder" : "File Explorer", viewer: mac ? "Preview" : "your PDF viewer", mod: mac ? "⌘" : "Ctrl+",
+      computer: mac ? "this Mac" : "this computer" };
+  })();
   QT.download = async function (path, fallbackName) {
     const res = await QT.api("GET", path, null, { raw: true });
     const blob = await res.blob();

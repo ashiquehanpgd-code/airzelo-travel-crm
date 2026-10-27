@@ -34,7 +34,17 @@ def core_imports():
                 names.update(a.name.split(".")[0] for a in node.names)
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 names.add(node.module.split(".")[0])
-    return sorted(names - {"server"})
+    vendored = {d.name for d in (ROOT / "core" / "vendor").iterdir() if d.is_dir()} if (ROOT / "core" / "vendor").is_dir() else set()
+    return sorted(names - {"server"} - vendored)
+
+
+def vendor_dir(args):
+    """The bundled third-party packages (core/vendor) that ship next to the core."""
+    if args and args[0] == "--app":
+        app = Path(args[1])
+        res = app / "Contents" / "Resources" if app.suffix == ".app" else app / "resources"
+        return res / "core" / "vendor"
+    return ROOT / "core" / "vendor"
 
 
 def locate(args):
@@ -80,11 +90,14 @@ def main(args):
              "for m in mods + native:\n"
              "    try:\n        importlib.import_module(m)\n"
              "    except Exception as e:\n        failed.append('%%s: %%s' %% (m, e))\n"
+             "sys.path.insert(0, %r)\n"
+             "try:\n    import pypdf\n    vendored = 'pypdf ' + pypdf.__version__\n"
+             "except Exception as e:\n    failed.append('pypdf (vendor): %%s' %% e)\n    vendored = ''\n"
              "import sqlite3, ssl\n"
              "pip = importlib.util.find_spec('pip') is not None\n"
              "ens = subprocess.run([sys.executable, '-I', '-m', 'ensurepip', '--version'], capture_output=True).returncode == 0\n"
              "print(json.dumps({'version': sys.version.split()[0], 'sqlite': sqlite3.sqlite_version, 'openssl': ssl.OPENSSL_VERSION,"
-             " 'missing': missing, 'failed': failed, 'pip': pip, 'ensurepip': ens}))\n") % (mods, list(NATIVE))
+             " 'missing': missing, 'failed': failed, 'pip': pip, 'ensurepip': ens, 'vendored': vendored}))\n") % (mods, list(NATIVE), str(vendor_dir(args)))
     try:
         r = subprocess.run([str(exe), "-I", "-B", "-c", probe], capture_output=True, text=True, timeout=120)
         out = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 and r.stdout.strip() else None
@@ -100,7 +113,7 @@ def main(args):
             if out["ensurepip"]:
                 fails.append("`python -m ensurepip` still works")
             notes.append("Python %s, SQLite %s, %s" % (out["version"], out["sqlite"], out["openssl"]))
-            notes.append("%d core modules + %d native modules import" % (len(mods), len(NATIVE)))
+            notes.append("%d core modules + %d native modules import; vendored: %s" % (len(mods), len(NATIVE), out.get("vendored") or "none"))
     except OSError as e:
         notes.append("import checks SKIPPED: this runtime cannot run on this machine (%s)" % e.strerror)
     print("runtime:", py)

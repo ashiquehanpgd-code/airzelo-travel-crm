@@ -112,6 +112,52 @@ try {
   await until('!!document.querySelector("[data-logo-box] img") && document.querySelector("[name=legal_name]").value === "GUI Test Travels Private Limited"', 'settings page shows saved profile');
   console.log('settings page: profile and logo shown for editing');
 
+  // ---- ticket PDFs and the built-in PDF preview, through the real page (synthetic booking)
+  const pdf = await crm.evaluate(`(async () => {
+    const api = (m, u, b) => fetch(u, { method: m, headers: { 'Content-Type': 'application/json', 'X-QT-CSRF': '1' }, body: b ? JSON.stringify(b) : undefined })
+      .then(async (r) => ({ status: r.status, type: r.headers.get('Content-Type'), disp: r.headers.get('Content-Disposition'),
+        body: r.headers.get('Content-Type') === 'application/pdf' ? await r.arrayBuffer() : await r.json() }));
+    const cust = await api('POST', '/api/customers', { name: 'Pdf Test Customer', phone: '+91 90000 00000' });
+    const sup = await api('POST', '/api/suppliers', { name: 'Pdf Test Portal', kind: 'b2b_portal' });
+    const bk = await api('POST', '/api/bookings', { customer_id: (cust.body.customer || cust.body).id, supplier_id: (sup.body.supplier || sup.body).id, pnr: 'PDF123', booking_date: '2026-10-10', status: 'ticketed',
+      currency: 'INR', exchange_rate: '1', purchase_cost: '10000', selling_price: '12000', commission: '0', service_charge: '0', other_income: '0',
+      passengers: [{ name: 'TEST PASSENGER', pax_type: 'ADT' }],
+      segments: [{ airline: 'IndiGo', flight_no: '6E 1407', origin: 'COK', destination: 'DXB', dep_at: '2026-11-02T04:10', arr_at: '2026-11-02T06:40' }] });
+    const id = (bk.body.booking || bk.body).id;
+    const dl = await api('GET', '/api/bookings/' + id + '/ticket.pdf');
+    const bytes = new Uint8Array(dl.body);
+    const head = new TextDecoder().decode(bytes.slice(0, 5));
+    const saved = await api('POST', '/api/bookings/' + id + '/ticket-file', { variant: 'payment', action: '' });
+    // attach the generated PDF and open it in the app's document viewer (Chromium's PDF viewer inside the window)
+    let bin = ''; for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    const doc = await api('POST', '/api/bookings/' + id + '/documents', { name: 'ticket.pdf', data: btoa(bin) });
+    await QT.openDoc(doc.body.id);
+    const obj = document.querySelector('.modal object[type="application/pdf"]');
+    return { error: [cust, sup, bk, doc].filter((r) => r.status >= 400).map((r) => r.status + ' ' + JSON.stringify(r.body)).join(' | '),
+      booking: bk.status, download: [dl.status, dl.type, head, (dl.disp || '').split(';')[0]], saved: saved.body, doc: doc.status,
+      viewer: navigator.pdfViewerEnabled, object: !!obj, objectHeight: obj ? obj.getBoundingClientRect().height : 0 };
+  })()`);
+  console.log('ticket PDF: booking', pdf.booking, '| download', pdf.download.join(' '), '| saved', pdf.saved.name, '| document', pdf.doc,
+    '| pdfViewerEnabled', pdf.viewer, '| viewer object', pdf.object, Math.round(pdf.objectHeight) + 'px');
+  if (pdf.error) console.log('API errors:', pdf.error);
+  if (pdf.booking !== 201 || pdf.download[0] !== 200 || pdf.download[2] !== '%PDF-' || pdf.download[3] !== 'attachment') throw new Error('ticket PDF download failed');
+  const savedFile = path.join(pdf.saved.folder || '', pdf.saved.name || '');
+  if (!savedFile.startsWith(userData) || !fs.existsSync(savedFile) || fs.readFileSync(savedFile).subarray(0, 5).toString() !== '%PDF-') {
+    throw new Error('ticket PDF not saved in the agency tickets folder: ' + savedFile);
+  }
+  console.log('ticket PDF on disk:', path.relative(userData, savedFile), fs.statSync(savedFile).size, 'bytes');
+  if (!pdf.viewer || !pdf.object || pdf.objectHeight < 100) throw new Error('built-in PDF preview is not available');
+  // Chromium hosts the PDF viewer in its own extension frame; it appears as a DevTools target once the PDF has loaded
+  let viewerTarget = null;
+  for (let i = 0; i < 40 && !viewerTarget; i++) {
+    const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+    viewerTarget = list.find((t) => t.url.startsWith('chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai'));
+    if (!viewerTarget) await sleep(250);
+  }
+  console.log('PDF viewer frame:', viewerTarget ? viewerTarget.type + ' ' + viewerTarget.url.slice(0, 70) : 'not found');
+  if (!viewerTarget) throw new Error('the PDF did not open in the built-in viewer');
+  await crm.evaluate('document.querySelector(".modal [data-x]").click(), true');
+
   // the bridge must refuse calls from a CRM page
   const refused = await crm.evaluate('typeof window.desktop === "undefined" ? "no bridge" : window.desktop.listAgencies().then(() => "ALLOWED", (e) => "refused")');
   console.log('desktop bridge from CRM page:', refused);

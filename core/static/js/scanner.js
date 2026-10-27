@@ -1,5 +1,6 @@
-/* AI Ticket Scanner - upload an e-ticket (PDF / JPG / PNG), read it on this Mac, and hand the extracted fields
-   to the booking form. Nothing leaves the Mac: the server runs Apple PDFKit + Vision locally. */
+/* AI Ticket Scanner - upload an e-ticket (PDF / JPG / PNG), read it on this computer, and hand the extracted fields
+   to the booking form. Nothing leaves the computer: macOS uses Apple PDFKit + Vision, Windows uses the bundled
+   PDF reader + Windows text recognition. */
 (function () {
   "use strict";
   const QT = window.QT;
@@ -12,7 +13,7 @@
   QT.ticketScanner = function (box, hooks) {
     let current = null;
     box.innerHTML = h`<div class="scan-card">
-      <div class="scan-head"><div class="scan-title">${QT.raw(icon("file"))}<div><b>AI Ticket Scanner — Upload Ticket</b><div class="small muted">PDF e-tickets, scanned tickets, JPG / PNG screenshots · read offline on this Mac</div></div></div>
+      <div class="scan-head"><div class="scan-title">${QT.raw(icon("file"))}<div><b>AI Ticket Scanner — Upload Ticket</b><div class="small muted">PDF e-tickets, scanned tickets, JPG / PNG screenshots · read offline on ${QT.os.computer}</div></div></div>
         <span class="badge b-green plain" data-engine>Offline</span></div>
       <label class="scan-drop" data-drop tabindex="0">
         <input type="file" hidden data-file accept=".pdf,.jpg,.jpeg,.png,.heic,application/pdf,image/jpeg,image/png">
@@ -26,7 +27,7 @@
     QT.get("/api/ticket-scan/status").then((s) => {
       const b = $("[data-engine]", box);
       if (!s.ready) { b.className = "badge b-red plain"; b.textContent = "Reader not installed"; b.title = s.reason; }
-      else b.title = s.note;
+      else { b.title = s.note; if (s.ocr === false) b.textContent = "Offline · PDF only"; }
     }).catch(() => {});
 
     async function scan(file) {
@@ -37,7 +38,7 @@
       if (current) discard();
       drop.classList.add("hidden");
       res.classList.remove("hidden");
-      res.innerHTML = h`<div class="scan-file"><span class="scan-spin"></span><div class="grow"><b>${file.name}</b><div class="small muted">Reading the ticket on this Mac… (the very first scan can take a minute while macOS prepares its text recogniser)</div></div></div>`.html;
+      res.innerHTML = h`<div class="scan-file"><span class="scan-spin"></span><div class="grow"><b>${file.name}</b><div class="small muted">Reading the ticket on ${QT.os.computer}… ${QT.os.mac ? "(the very first scan can take a minute while macOS prepares its text recogniser)" : ""}</div></div></div>`.html;
       try {
         const r = await QT.post("/api/ticket-scan", { name: file.name, data: await QT.fileToBase64(file) });
         current = r;

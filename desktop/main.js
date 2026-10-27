@@ -13,7 +13,10 @@ const PRODUCT = 'AirZelo'; // product name (also the data folder name: keep stab
 const isWin = process.platform === 'win32';
 
 // TACRM_USER_DATA: separate data folder for automated tests (never set for customers)
-if (process.env.TACRM_USER_DATA) app.setPath('userData', process.env.TACRM_USER_DATA);
+if (process.env.TACRM_USER_DATA) {
+  app.setPath('userData', process.env.TACRM_USER_DATA);
+  app.setPath('documents', path.join(process.env.TACRM_USER_DATA, 'Documents')); // ticket PDFs stay in the test folder
+}
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
 const dataRoot = () => path.join(app.getPath('userData'), 'agencies');
@@ -34,7 +37,14 @@ function pythonPath() {
   return fs.existsSync(dev) ? dev : (isWin ? 'python' : 'python3');
 }
 const corePath = () => (app.isPackaged ? path.join(process.resourcesPath, 'core', 'run.py') : path.join(__dirname, '..', 'core', 'run.py'));
-const ticketDir = (name) => path.join(app.getPath('documents'), PRODUCT, name.replace(/[\\/:*?"<>|]/g, '-').trim() || 'Agency', 'Tickets');
+// A folder name that is valid on Windows too: no reserved characters or control characters, no trailing dots or
+// spaces (Windows silently drops them, so "Pvt. Ltd." would not match), and not a device name such as CON or AUX.
+function folderName(name) {
+  let n = String(name || '').replace(/[\\/:*?"<>|\x00-\x1f]/g, '-').replace(/[. ]+$/, '').trim().slice(0, 80).replace(/[. ]+$/, '');
+  if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(n)) n += '-agency';
+  return n || 'Agency';
+}
+const ticketDir = (name) => path.join(app.getPath('documents'), PRODUCT, folderName(name), 'Tickets');
 
 function coreEnv(extra) {
   return { ...process.env, PYTHONUNBUFFERED: '1', PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1', PYTHONUTF8: '1', ...extra };

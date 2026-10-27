@@ -24,7 +24,7 @@
     "directories": { "output": "../dist", "buildResources": "resources" },
     "files": ["main.js", "preload.js", "launcher/**", "package.json"],
     "extraResources": [
-      { "from": "../core", "to": "core", "filter": ["run.py", "server/**", "static/**", "bin/**", "!**/__pycache__/**", "!**/*.pyc"] },
+      { "from": "../core", "to": "core", "filter": ["run.py", "server/**", "static/**", "bin/**", "vendor/**", "tools/*.ps1", "!**/__pycache__/**", "!**/*.pyc"] },
       { "from": "../build/runtime/${os}-${arch}/python", "to": "python", "filter": ["**/*", "!**/__pycache__/**"] }
     ],
     "asar": true,

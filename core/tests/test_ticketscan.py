@@ -1,4 +1,4 @@
-"""Offline ticket scanner: parsing rules, the on-Mac reader (PDF text + OCR), and the scan / attach routes.
+"""Offline ticket scanner: parsing rules, the reader on this computer (PDF text + OCR), and the scan / attach routes.
 Fixtures are synthetic tickets with made-up passengers."""
 import base64
 import os
@@ -12,6 +12,7 @@ from server.errors import ValidationError
 
 HERE = Path(__file__).resolve().parent
 READY = ts.reader_status()["ready"]
+OCR = bool(ts.reader_status().get("ocr"))     # macOS (Apple Vision) and Windows (Windows.Media.Ocr)
 
 
 def val(f):
@@ -84,7 +85,7 @@ Base Fare INR 120,000.00   Taxes & Fees INR 15,500.00   Total Fare INR 135,500.0
         self.assertTrue(any("report" in w for w in r["warnings"]))
 
 
-@unittest.skipUnless(READY, "offline reader not built (bin/ta-ticket-reader)")
+@unittest.skipUnless(READY, "ticket reader not available (see reader_status())")
 class OfflineReader(unittest.TestCase):
     def check(self, path, method):
         out = ts.read_file(path)
@@ -100,6 +101,7 @@ class OfflineReader(unittest.TestCase):
     def test_digital_pdf(self):
         self.check(HERE / "fixture_ticket.pdf", "pdf-text")
 
+    @unittest.skipUnless(OCR, "no text recognition on this system (macOS and Windows only)")
     def test_image_ocr(self):
         self.check(HERE / "fixture_ticket.png", "ocr")
 
@@ -109,7 +111,7 @@ class OfflineReader(unittest.TestCase):
             ts.read_file(bad)
 
 
-@unittest.skipUnless(READY, "offline reader not built (bin/ta-ticket-reader)")
+@unittest.skipUnless(READY, "ticket reader not available (see reader_status())")
 class ScanAndAttach(Base):
     def upload(self, name):
         return ts.scan(self.conn, self.ctx, {"name": name, "data": base64.b64encode((HERE / name).read_bytes()).decode()})
@@ -119,8 +121,9 @@ class ScanAndAttach(Base):
         r = self.upload("fixture_ticket.pdf")
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM bookings").fetchone()[0], before)   # no booking created
         self.assertEqual(r["kind"], "pdf")
-        self.assertTrue(r["preview"])
-        self.assertTrue(ts.preview_path(self.ctx, r["scan_id"]).exists())
+        if OCR:   # the page preview is drawn by the same system component that does OCR
+            self.assertTrue(r["preview"])
+            self.assertTrue(ts.preview_path(self.ctx, r["scan_id"]).exists())
         self.assertEqual(r["duplicate_pnr"], [])
         # the same PNR saved later is reported as a possible duplicate
         self.booking(pnr="K7Q2LM")
@@ -145,7 +148,7 @@ class ScanAndAttach(Base):
             ts.preview_path(self.ctx, "../../etc/passwd")
 
     def test_discard(self):
-        r = self.upload("fixture_ticket.png")
-        self.assertEqual(r["method"], "ocr")
+        r = self.upload("fixture_ticket.png" if OCR else "fixture_ticket.pdf")
+        self.assertEqual(r["method"], "ocr" if OCR else "pdf-text")
         ts.discard_scan(self.ctx, r["scan_id"])
         self.assertEqual(list(ts.scan_dir(self.ctx).glob(r["scan_id"] + ".*")), [])

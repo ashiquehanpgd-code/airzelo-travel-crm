@@ -192,7 +192,9 @@ def file_name(td, variant):
     lead = td["passengers"][0]["name"] if td["passengers"] else td["customer"]["name"]
     parts = ["Booking", b["ref"], b["pnr"], lead, "Ticket+Payment" if variant == "payment" else "Ticket"]
     safe = [re.sub(r"[^A-Za-z0-9+-]+", "-", p).strip("-")[:40] for p in parts if p]
-    return "_".join(x for x in safe if x) + ".pdf"
+    # ASCII letters, digits, + and - only: valid on Windows and macOS. Kept short so the full path stays well under
+    # Windows' 260-character limit even inside a long OneDrive Documents path.
+    return "_".join(x for x in safe if x)[:110].rstrip("_-") + ".pdf"
 
 
 def money(minor, cur="INR"):
@@ -580,8 +582,33 @@ def render_pdf(td, variant="ticket"):
     return _Layout(td).build("payment" if variant == "payment" else "ticket")
 
 
+def documents_dir():
+    """The user's real Documents folder. On Windows it is often moved (for example into OneDrive), so ask Windows
+    instead of assuming %USERPROFILE%\\Documents."""
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class GUID(ctypes.Structure):
+                _fields_ = [("d1", wintypes.DWORD), ("d2", wintypes.WORD), ("d3", wintypes.WORD), ("d4", ctypes.c_ubyte * 8)]
+
+            # FOLDERID_Documents {FDD39AD0-238F-46AF-ADB4-6C85480369C7}
+            fid = GUID(0xFDD39AD0, 0x238F, 0x46AF, (ctypes.c_ubyte * 8)(0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7))
+            out = ctypes.c_wchar_p()
+            if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(fid), 0, None, ctypes.byref(out)) == 0:
+                try:
+                    if out.value:
+                        return Path(out.value)
+                finally:
+                    ctypes.windll.ole32.CoTaskMemFree(out)
+        except (OSError, AttributeError):
+            pass
+    return Path.home() / "Documents"
+
+
 def tickets_dir():
-    return Path(os.environ.get("TACRM_TICKET_DIR") or (Path.home() / "Documents" / "AirZelo" / "Tickets"))
+    return Path(os.environ.get("TACRM_TICKET_DIR") or (documents_dir() / "AirZelo" / "Tickets"))
 
 
 def save_pdf(td, variant):

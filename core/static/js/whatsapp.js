@@ -380,11 +380,11 @@
     function drawAttachment(state) {
       const box = $("[data-attach]", body);
       if (!box) return;
-      box.innerHTML = h`<div class="wa-step done"><span class="n">1</span><div class="grow"><b>PDF saved on this Mac</b>
-          <div class="wa-file">${QT.raw(icon("file"))}<span>${att.name}</span></div><div class="small muted">Documents › AirZelo › Tickets</div>
-          <div class="row" style="gap:6px;margin-top:6px"><button type="button" class="btn xs" data-reveal>${QT.raw(icon("search"))}Show in Finder</button><button type="button" class="btn xs" data-open-pdf>${QT.raw(icon("file"))}Open PDF</button></div></div></div>
+      box.innerHTML = h`<div class="wa-step done"><span class="n">1</span><div class="grow"><b>PDF saved on ${QT.os.computer}</b>
+          <div class="wa-file">${QT.raw(icon("file"))}<span>${att.name}</span></div><div class="small muted mono">${att.folder || ""}</div>
+          <div class="row" style="gap:6px;margin-top:6px"><button type="button" class="btn xs" data-reveal>${QT.raw(icon("search"))}Show in ${QT.os.files}</button><button type="button" class="btn xs" data-open-pdf>${QT.raw(icon("file"))}Open PDF</button></div></div></div>
         <div class="wa-step ${state === "opened" ? "done" : ""}"><span class="n">2</span><div class="grow"><b>Open WhatsApp</b> with the message below${state === "opened" ? " — opened" : ""}</div></div>
-        <div class="wa-step"><span class="n">3</span><div class="grow"><b>Attach the PDF in WhatsApp</b>, then press Send. Drag the file from the Finder window into the chat, or click 📎 → Document and pick <b>${att.name}</b>.</div></div>`.html;
+        <div class="wa-step"><span class="n">3</span><div class="grow"><b>Attach the PDF in WhatsApp</b>, then press Send. Drag the file from the ${QT.os.files} window into the chat, or click 📎 → Document and pick <b>${att.name}</b>.</div></div>`.html;
       $("[data-reveal]", box).onclick = () => att.reveal();
       $("[data-open-pdf]", box).onclick = () => att.open();
     }
@@ -397,7 +397,7 @@
         { label: "Copy message", icon: "copy", onClick: async () => {
           if (!text.value.trim()) { QT.toast("The message is empty", "err"); return false; }
           if (await wa.copy(text.value)) QT.toast("Message copied — paste it into WhatsApp");
-          else { text.focus(); text.select(); QT.toast("Could not copy automatically. The text is selected — press ⌘C to copy it.", "err"); }
+          else { text.focus(); text.select(); QT.toast("Could not copy automatically. The text is selected — press " + QT.os.mod + "C to copy it.", "err"); }
           return false;
         } },
         { label: "Open WhatsApp", icon: "whatsapp", cls: "primary wa", onClick: () => {
@@ -447,16 +447,20 @@
     if (td.payment.pending <= 0) { QT.toast("This booking is fully paid — no payment reminder is needed.", "err"); return false; }
     return true;
   };
-  // save the PDF on this Mac (Documents › AirZelo › Tickets); action "open" = Preview, "reveal" = Finder
+  // save the PDF in the tickets folder (Documents › AirZelo › Tickets); action "open" = PDF viewer, "reveal" = Finder / File Explorer.
+  // If the computer cannot open it, say why and download it instead, so the user always ends up with the file.
   wa.savePdf = async function (bookingId, variant, action) {
     const r = await QT.post("/api/bookings/" + bookingId + "/ticket-file", { variant, action: action || "" });
-    if (action && !r.opened) await QT.download("/api/bookings/" + bookingId + "/ticket.pdf?variant=" + variant, r.name);
+    if (action && !r.opened) {
+      if (r.open_error) QT.toast("Could not " + (action === "reveal" ? "show the file in " + QT.os.files : "open the PDF in " + QT.os.viewer) + ": " + r.open_error + ". Downloading it instead.", "err");
+      await QT.download("/api/bookings/" + bookingId + "/ticket.pdf?variant=" + variant, r.name);
+    }
     return r;
   };
   wa.printTicket = async function (bookingId, variant) {
     try {
       const r = await wa.savePdf(bookingId, variant, "open");
-      QT.toast(r.opened ? "PDF saved as " + r.name + " and opened in Preview — press ⌘P to print." : "PDF downloaded: " + r.name);
+      QT.toast(r.opened ? "PDF saved as " + r.name + " and opened in " + QT.os.viewer + " — press " + QT.os.mod + "P to print." : "PDF downloaded: " + r.name);
     } catch (e) { QT.fail(e); }
   };
   wa.ticketText = async function (id) {
@@ -479,9 +483,9 @@
       file = await wa.savePdf(id, variant, "");
     } catch (e) { QT.fail(e); return; }
     QT.toast("PDF generated and saved: " + file.name);
-    const attachment = { name: file.name,
-      reveal: async (quiet) => { try { const r = await wa.savePdf(id, variant, "reveal"); if (!quiet) QT.toast(r.opened ? "Showing " + r.name + " in Finder" : "PDF downloaded: " + r.name); } catch (e) { QT.fail(e); } },
-      open: async () => { try { const r = await wa.savePdf(id, variant, "open"); QT.toast(r.opened ? "Opened " + r.name + " in Preview" : "PDF downloaded: " + r.name); } catch (e) { QT.fail(e); } } };
+    const attachment = { name: file.name, folder: file.folder,
+      reveal: async (quiet) => { try { const r = await wa.savePdf(id, variant, "reveal"); if (!quiet) QT.toast(r.opened ? "Showing " + r.name + " in " + QT.os.files : "PDF downloaded: " + r.name); } catch (e) { QT.fail(e); } },
+      open: async () => { try { const r = await wa.savePdf(id, variant, "open"); QT.toast(r.opened ? "Opened " + r.name + " in " + QT.os.viewer : "PDF downloaded: " + r.name); } catch (e) { QT.fail(e); } } };
     wa.compose({ title: "WhatsApp " + (withPayment ? "ticket + payment PDF" : "flight ticket PDF") + " · " + (td.booking.pnr || td.booking.ref),
       name: td.customer.name, phone: phoneOf(td), attachment,
       templates: [{ key: "pdf", label: "Message with the PDF", build: (v) => wa.tpl.ticketPdf(td, v, withPayment) }] });

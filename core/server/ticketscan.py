@@ -1,8 +1,9 @@
-"""Offline ticket scanner: read an e-ticket (PDF or image) on this Mac and turn it into booking-form fields.
+"""Offline ticket scanner: read an e-ticket (PDF or image) on this computer and turn it into booking-form fields.
 
 Pipeline (all local, no network):
-  1. bin/ta-ticket-reader  - PDFKit text for digital PDFs, Apple Vision OCR for scans / screenshots
-  2. parse()               - deterministic patterns for PNRs, ticket numbers, flights, airports, dates, fares
+  1. read_file()  - macOS: bin/ta-ticket-reader (PDFKit text for digital PDFs, Apple Vision OCR for scans / screenshots)
+                    Windows and others: server/pdftext.py (bundled pypdf for PDF text, Windows.Media.Ocr for scans)
+  2. parse()      - deterministic patterns for PNRs, ticket numbers, flights, airports, dates, fares
 
 Every field carries a confidence ("high", "medium", "low"). Anything not found is left empty and listed as
 missing - nothing is guessed. The scanner never saves a booking; it only fills the form for review.
@@ -12,10 +13,12 @@ import os
 import re
 import secrets
 import subprocess
+import sys
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from . import pdftext
 from .errors import ValidationError, NotFound
 from .ticket import AIRPORTS
 
@@ -712,17 +715,23 @@ def scan_dir(ctx):
     return d
 
 
+def mac_reader_ready():
+    return sys.platform == "darwin" and READER.exists() and os.access(READER, os.X_OK)
+
+
 def reader_status():
-    """Is the offline reader ready? Builds it from source on first use when the Swift compiler is present."""
-    if READER.exists() and os.access(READER, os.X_OK):
-        return {"ready": True, "engine": "Apple PDFKit + Vision (on this Mac)"}
-    return {"ready": False, "engine": "", "reason": "The ticket reader is not built. Run: swiftc -O tools/ticket_reader.swift -o bin/ta-ticket-reader"}
+    """Is the offline reader ready on this computer?"""
+    if mac_reader_ready():
+        return {"ready": True, "engine": "Apple PDFKit + Vision (on this Mac)", "ocr": True}
+    return pdftext.status()
 
 
 def read_file(path, preview_path=None, timeout=180):
     st = reader_status()
     if not st["ready"]:
         raise ValidationError(st["reason"])
+    if not mac_reader_ready():
+        return pdftext.read(path, preview_path)
     args = [str(READER), str(path)] + ([str(preview_path)] if preview_path else [])
     try:
         r = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
