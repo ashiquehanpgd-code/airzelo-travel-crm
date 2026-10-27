@@ -85,12 +85,15 @@ EDITABLE_SETTINGS = ("business_name", "business_tagline", "business_address", "b
                      # company profile, white-label branding and document preferences
                      "legal_name", "business_country", "business_website", "business_registration", "receipt_footer",
                      "brand_color", "booking_prefix", "receipt_prefix", "date_format", "currency_display",
-                     "report_default_period", "setup_completed")
+                     "report_default_period", "setup_completed",
+                     # fare search (optional feature)
+                     "fare_search_enabled", "fare_stale_minutes")
 # cosmetic / identity settings: changing them never touches posted money or issued documents
 CHOICE_SETTINGS = {"date_format": ("DD/MM/YYYY", "DD MMM YYYY", "MM/DD/YYYY", "YYYY-MM-DD"),
                    "currency_display": ("symbol", "code"),
                    "report_default_period": ("month", "fy", "year", "week", "today"),
-                   "setup_completed": ("0", "1")}
+                   "setup_completed": ("0", "1"),
+                   "fare_search_enabled": ("0", "1")}
 PREFIX_SETTINGS = ("invoice_prefix", "credit_note_prefix", "booking_prefix", "receipt_prefix")
 FORMAT_RULES = {
     "business_email": (r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$", "Enter a valid email address"),
@@ -117,12 +120,13 @@ def update_settings(conn, data):
                 val = "" if data[k] is None else str(data[k]).strip()
                 if len(val) > 2000:
                     raise ValidationError("%s is too long" % k, k)
-                if k in ("auto_backup_hours", "backup_keep", "session_hours"):
+                if k in ("auto_backup_hours", "backup_keep", "session_hours", "fare_stale_minutes"):
                     try:
                         n = int(val)
                     except ValueError:
                         raise ValidationError("%s must be a whole number" % k, k)
-                    lim = {"auto_backup_hours": (0, 720), "backup_keep": (3, 1000), "session_hours": (1, 72)}[k]
+                    lim = {"auto_backup_hours": (0, 720), "backup_keep": (3, 1000), "session_hours": (1, 72),
+                           "fare_stale_minutes": (1, 240)}[k]
                     if not lim[0] <= n <= lim[1]:
                         raise ValidationError("%s must be between %d and %d" % (k, lim[0], lim[1]), k)
                     val = str(n)
@@ -369,7 +373,8 @@ def delete_supplier(conn, sid):
         if not s:
             raise NotFound("Supplier not found")
         used = conn.execute("SELECT (SELECT COUNT(*) FROM bookings WHERE supplier_id = ?) + "
-                            "(SELECT COUNT(*) FROM transactions WHERE supplier_id = ?)", (sid, sid)).fetchone()[0]
+                            "(SELECT COUNT(*) FROM transactions WHERE supplier_id = ?) + "
+                            "(SELECT COUNT(*) FROM fare_search_suppliers WHERE supplier_id = ?)", (sid, sid, sid)).fetchone()[0]
         if used:
             conn.execute("UPDATE suppliers SET active = 0, updated_at = ? WHERE id = ?", (now_iso(), sid))
             audit(conn, "supplier", sid, "deactivate", s, {"active": 0})

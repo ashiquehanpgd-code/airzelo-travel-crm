@@ -122,13 +122,16 @@
     const meta = QT.state.meta;
     const editing = !!id;
     const [customers, existing] = await Promise.all([QT.get("/api/customers"), editing ? QT.get("/api/bookings/" + id) : null]);
-    const b = existing ? existing.booking : {
+    // a draft handed over by Fare search ("Use" on a re-checked quote); used once, never saved by itself
+    const draft = !editing && params.from_quote && QT.state.bookingDraft && String(QT.state.bookingDraft.quote_id) === params.from_quote ? QT.state.bookingDraft : null;
+    if (draft) QT.state.bookingDraft = null;
+    const b = existing ? existing.booking : Object.assign({
       status: "confirmed", service_type: "flight", trip_type: "one_way", booking_date: QT.today(), currency: QT.base(), exchange_rate: "1",
       pnr: (params.pnr || "").toUpperCase(), customer_id: params.customer_id ? +params.customer_id : null,
-    };
-    const pax = existing ? existing.passengers : [{ name: "", pax_type: "ADT" }];
-    const segs = existing ? existing.segments : [{ direction: "outbound" }];
-    const m = (k) => (existing ? QT.plain(b[k]) : "");
+    }, draft ? draft.booking : {});
+    const pax = existing ? existing.passengers : draft ? draft.passengers : [{ name: "", pax_type: "ADT" }];
+    const segs = existing ? existing.segments : draft ? draft.segments : [{ direction: "outbound" }];
+    const m = (k) => (existing ? QT.plain(b[k]) : draft && draft.money[k] !== null && draft.money[k] !== undefined ? QT.plain(draft.money[k]) : "");
     const cust = b.customer_id ? customers.find((c) => c.id === b.customer_id) : null;
     const curOpts = meta.currencies.filter((c) => c.active || c.code === b.currency).map((c) => [c.code, c.code + " · " + c.name]);
     const taxOpts = meta.tax_profiles.filter((t) => t.active || t.id === b.tax_profile_id).map((t) => [t.id, t.name]);

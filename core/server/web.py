@@ -23,7 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, quote
 
-from . import VERSION, auth, backup, services, reports, finance, ticket, ticketscan, debts, upgrade, branding
+from . import VERSION, auth, backup, services, reports, finance, ticket, ticketscan, debts, upgrade, branding, faresearch
 from .db import connect, migrate, get_setting
 from .errors import ApiError, NotFound, Unauthorized, Forbidden, ValidationError
 
@@ -606,6 +606,80 @@ def r_debt_interest(req, did):
 @route("POST", r"/api/debt-entries/(\d+)/reverse")
 def r_debt_entry_reverse(req, eid):
     return J({"id": debts.reverse_entry(req.conn, int(eid), req.json())})
+
+
+# ------------------------------------------------------------- fare search
+# Portal addresses can be set up while the feature is off; searches and quotes need it switched on.
+@route("GET", r"/api/fare/portals")
+def r_fare_portals(req):
+    return J(faresearch.list_portals(req.conn))
+
+
+@route("PUT", r"/api/fare/portals/(\d+)")
+def r_fare_portal_save(req, sid):
+    faresearch.save_portal(req.conn, int(sid), req.json())
+    return J(faresearch.list_portals(req.conn))
+
+
+@route("DELETE", r"/api/fare/portals/(\d+)")
+def r_fare_portal_delete(req, sid):
+    faresearch.delete_portal(req.conn, int(sid))
+    return J(faresearch.list_portals(req.conn))
+
+
+@route("GET", r"/api/fare/searches")
+def r_fare_searches(req):
+    faresearch.require_enabled(req.conn)
+    return J(faresearch.list_searches(req.conn, req.q("limit")))
+
+
+@route("POST", r"/api/fare/searches")
+def r_fare_search_create(req):
+    fid = faresearch.create_search(req.conn, req.json())
+    return J(faresearch.get_search(req.conn, fid), 201)
+
+
+@route("GET", r"/api/fare/searches/(\d+)")
+def r_fare_search(req, fid):
+    faresearch.require_enabled(req.conn)
+    return J(faresearch.get_search(req.conn, int(fid)))
+
+
+@route("PUT", r"/api/fare/searches/(\d+)")
+def r_fare_search_update(req, fid):
+    return J(faresearch.update_search(req.conn, int(fid), req.json()))
+
+
+@route("DELETE", r"/api/fare/searches/(\d+)")
+def r_fare_search_delete(req, fid):
+    return J({"id": faresearch.delete_search(req.conn, int(fid))})
+
+
+@route("POST", r"/api/fare/searches/(\d+)/suppliers/(\d+)")
+def r_fare_search_supplier(req, fid, sid):
+    return J(faresearch.set_supplier_status(req.conn, int(fid), int(sid), req.json()))
+
+
+@route("POST", r"/api/fare/searches/(\d+)/quotes")
+def r_fare_quote_add(req, fid):
+    qid = faresearch.add_quote(req.conn, int(fid), req.json())
+    return J(faresearch.get_quote(req.conn, qid), 201)
+
+
+@route("DELETE", r"/api/fare/quotes/(\d+)")
+def r_fare_quote_delete(req, qid):
+    return J({"id": faresearch.delete_quote(req.conn, int(qid))})
+
+
+@route("POST", r"/api/fare/quotes/(\d+)/recheck")
+def r_fare_quote_recheck(req, qid):
+    return J(faresearch.recheck_quote(req.conn, int(qid), req.json()), 201)
+
+
+@route("GET", r"/api/fare/quotes/(\d+)/duplicates")
+def r_fare_quote_duplicates(req, qid):
+    faresearch.require_enabled(req.conn)
+    return J(faresearch.possible_duplicates(req.conn, int(qid)))
 
 
 # ----------------------------------------------------------------- reports

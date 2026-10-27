@@ -4,7 +4,7 @@
   const QT = window.QT;
   const { h, esc, icon, el, $, $$ } = QT;
   const TABS = [["business", "Company & branding", "building"], ["payment", "Payment details", "bank"], ["invoice", "Documents & formats", "invoice"], ["tax", "Tax / GST", "percent"], ["currencies", "Currencies", "globe"],
-    ["categories", "Expense categories", "expense"], ["backups", "Backup & restore", "database"], ["security", "Security", "shield"]];
+    ["categories", "Expense categories", "expense"], ["backups", "Backup & restore", "database"], ["security", "Security", "shield"], ["fares", "Fare search", "plane"]];
 
   QT.pages.settings = async function (view, params, tab) {
     tab = tab || "business";
@@ -124,6 +124,8 @@
         try { await QT.post("/api/expense-categories", { name: n, active: true }); QT.toast("Category added"); QT.reload(); } catch (e) { QT.fail(e); }
       };
       $$("[data-toggle]", pane).forEach((b) => { b.onclick = async () => { await QT.post("/api/expense-categories", { name: b.dataset.toggle, active: b.dataset.active !== "1" }); QT.reload(); }; });
+    } else if (tab === "fares") {
+      await QT.fareSettings(pane, s);
     } else if (tab === "security") {
       pane.innerHTML = h`<div class="grid g2" style="max-width:1000px">
         <div class="card"><div class="card-h"><h3>Change password</h3></div><form class="card-b form-grid" data-pw onsubmit="return false">

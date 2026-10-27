@@ -8,6 +8,8 @@
   python3 run.py --data DIR --backup        make a verified backup now and exit
   python3 run.py --data DIR --reset-password   reset the owner login (needs access to this computer)
   python3 run.py --data DIR --rollback-to N    undo database upgrades after version N (backs up first)
+  python3 run.py --data DIR --remove-fare-search   delete all fare searches, quotes and portal addresses
+                                            (backs up first; older app versions ignore these tables anyway)
   python3 run.py --version                  print app and data versions as JSON
 """
 import argparse
@@ -25,7 +27,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from server import VERSION, web, auth, backup, services  # noqa: E402
-from server.db import connect, rollback, current_version, MIGRATIONS  # noqa: E402
+from server.db import connect, rollback, current_version, remove_fare_search, MIGRATIONS  # noqa: E402
 from server.errors import ApiError  # noqa: E402
 from server.upgrade import UpgradeError  # noqa: E402
 
@@ -71,6 +73,8 @@ def main():
     ap.add_argument("--version", action="store_true")
     ap.add_argument("--rollback-to", type=int, metavar="VERSION",
                     help="Undo database upgrades newer than VERSION (stop the app first)")
+    ap.add_argument("--remove-fare-search", action="store_true",
+                    help="Delete all fare search data (stop the app first; a verified backup is made)")
     a = ap.parse_args()
 
     if a.version:
@@ -98,6 +102,20 @@ def main():
         finally:
             conn.close()
         print("Database schema %d -> %d (integrity: %s)." % (before, after, ok))
+        return
+
+    if a.remove_fare_search:
+        ctx = web.Context(a.data)
+        ctx.init()
+        r = backup.create_backup(ctx, "manual", "Before removing fare search data")
+        print("Verified backup saved: %s" % (ctx.backup_dir / r["name"]))
+        conn = connect(ctx.db_path)
+        try:
+            remove_fare_search(conn)
+            ok = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        finally:
+            conn.close()
+        print("Fare search data removed (integrity: %s)." % ok)
         return
 
     if a.reset_password:

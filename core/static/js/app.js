@@ -27,6 +27,7 @@
     [/^\/accounts$/, "accounts"], [/^\/accounts\/(\d+)\/reconcile$/, "reconcile"],
     [/^\/invoices$/, "invoices"],
     [/^\/debts$/, "debts"], [/^\/debts\/(\d+)$/, "debt"],
+    [/^\/fares$/, "fares"], [/^\/fares\/(\d+)$/, "fare"],
     [/^\/reports$/, "reports"], [/^\/reports\/([a-z_]+)$/, "reports"],
     [/^\/settings$/, "settings"], [/^\/settings\/([a-z_]+)$/, "settings"],
     [/^\/audit$/, "audit"],
@@ -34,7 +35,7 @@
   ];
   const NAV = [
     ["Overview", [["#/dashboard", "dashboard", "Dashboard"], ["#/pnr", "search", "PNR search"]]],
-    ["Operations", [["#/bookings", "ticket", "Bookings"], ["#/customers", "users", "Customers"], ["#/suppliers", "building", "Suppliers"]]],
+    ["Operations", [["#/bookings", "ticket", "Bookings"], ["#/customers", "users", "Customers"], ["#/suppliers", "building", "Suppliers"], ["#/fares", "plane", "Fare search"]]],
     ["Money", [["#/finance/receipts", "arrowIn", "Receipts"], ["#/finance/payments", "arrowOut", "Supplier payments"], ["#/finance/refunds", "refund", "Refunds"],
       ["#/finance/expenses", "expense", "Expenses"], ["#/accounts", "bank", "Cash & bank"], ["#/reports/cashbook", "book", "Cashbook"], ["#/invoices", "invoice", "Invoices"], ["#/debts", "coins", "Debts & loans"]]],
     ["Insights", [["#/reports", "chart", "Reports"], ["#/audit", "history", "Audit trail"], ["#/settings", "settings", "Settings"]]],
@@ -103,7 +104,7 @@
     let nav = "";
     NAV.forEach(([label, items]) => {
       nav += '<div class="nav-label">' + esc(label) + '</div><nav class="nav">';
-      items.forEach(([href, ic, text]) => { nav += '<a href="' + href + '">' + icon(ic) + "<span>" + esc(text) + "</span></a>"; });
+      items.forEach(([href, ic, text]) => { if (href === "#/fares" && !QT.fareSearchOn()) return; nav += '<a href="' + href + '">' + icon(ic) + "<span>" + esc(text) + "</span></a>"; });
       nav += "</nav>";
     });
     $("#app").innerHTML = h`<div class="shell">

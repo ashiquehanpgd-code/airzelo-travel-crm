@@ -485,6 +485,99 @@ DELETE FROM counters WHERE name IN ('debt', 'debt_entry', 'txn-LNR', 'txn-LNP');
 """):
         conn.execute(stmt)
 
+# Fare search (optional feature, off by default). Its tables only hold search requests and quotes the user typed in;
+# they never touch bookings or money. They are created outside the numbered migrations on purpose, so the feature can
+# be merged before or after other schema versions (e.g. the shared-office v5) without renumbering, and removed with
+# `run.py --remove-fare-search`. Supplier passwords, OTPs and cookies are never stored here.
+FARE_SEARCH_SCHEMA = r"""
+CREATE TABLE IF NOT EXISTS fare_portals (
+  supplier_id INTEGER PRIMARY KEY REFERENCES suppliers(id) ON DELETE CASCADE,
+  login_url TEXT NOT NULL,
+  search_hint TEXT,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fare_searches (
+  id INTEGER PRIMARY KEY,
+  search_no TEXT NOT NULL UNIQUE,
+  origin TEXT NOT NULL,
+  destination TEXT NOT NULL,
+  trip_type TEXT NOT NULL CHECK (trip_type IN ('one_way','round_trip')),
+  depart_date TEXT NOT NULL,
+  return_date TEXT,
+  adults INTEGER NOT NULL CHECK (adults BETWEEN 1 AND 9),
+  children INTEGER NOT NULL DEFAULT 0 CHECK (children BETWEEN 0 AND 8),
+  infants INTEGER NOT NULL DEFAULT 0 CHECK (infants BETWEEN 0 AND 4),
+  cabin TEXT NOT NULL DEFAULT 'Economy',
+  direct_only INTEGER NOT NULL DEFAULT 0 CHECK (direct_only IN (0,1)),
+  baggage TEXT,
+  selling_price INTEGER CHECK (selling_price IS NULL OR selling_price >= 0),
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+  idem_key TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_fare_search_idem ON fare_searches(idem_key) WHERE idem_key IS NOT NULL;
+CREATE TABLE IF NOT EXISTS fare_search_suppliers (
+  search_id INTEGER NOT NULL REFERENCES fare_searches(id) ON DELETE CASCADE,
+  supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','opened','searched','quoted','no_fare','failed')),
+  note TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (search_id, supplier_id)
+);
+-- every amount is NULL when the user did not enter it ("unavailable"), never 0
+CREATE TABLE IF NOT EXISTS fare_quotes (
+  id INTEGER PRIMARY KEY,
+  quote_no TEXT NOT NULL UNIQUE,
+  search_id INTEGER NOT NULL REFERENCES fare_searches(id) ON DELETE CASCADE,
+  supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+  airline TEXT,
+  flight_nos TEXT,
+  dep_at TEXT,
+  arr_at TEXT,
+  stops INTEGER CHECK (stops IS NULL OR stops BETWEEN 0 AND 5),
+  duration TEXT,
+  fare_family TEXT,
+  baggage TEXT,
+  refund_terms TEXT,
+  base_fare INTEGER,
+  taxes INTEGER,
+  fees INTEGER,
+  final_payable INTEGER NOT NULL CHECK (final_payable > 0),
+  payment_charges INTEGER,
+  commission INTEGER,
+  seen_at TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','recheck')),
+  recheck_of INTEGER REFERENCES fare_quotes(id),
+  notes TEXT,
+  idem_key TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_fare_quotes_search ON fare_quotes(search_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_fare_quote_idem ON fare_quotes(idem_key) WHERE idem_key IS NOT NULL;
+"""
+FARE_SEARCH_TABLES = ("fare_quotes", "fare_search_suppliers", "fare_searches", "fare_portals")
+
+
+def ensure_fare_search(conn):
+    with tx(conn):
+        for stmt in _statements(FARE_SEARCH_SCHEMA):
+            conn.execute(stmt)
+
+
+def remove_fare_search(conn):
+    """Drop the fare search tables and settings (quotes are not money; take a backup first)."""
+    with tx(conn):
+        for t in FARE_SEARCH_TABLES:
+            conn.execute("DROP TABLE IF EXISTS %s" % t)
+        conn.execute("DELETE FROM settings WHERE key LIKE 'fare\\_%' ESCAPE '\\'")
+        conn.execute("DELETE FROM counters WHERE name IN ('fare_search', 'fare_quote')")
+
+
 MIGRATIONS = [
     (1, "initial schema", SCHEMA_V1),
     (2, "account type, bank name and last 4 digits", SCHEMA_V2),
@@ -545,6 +638,9 @@ DEFAULT_SETTINGS = {
     "currency_display": "symbol",
     "report_default_period": "month",
     "setup_completed": "0",
+    # fare search (Flights -> Fare search): off until the owner switches it on in Settings
+    "fare_search_enabled": "0",
+    "fare_stale_minutes": "15",
 }
 
 DEFAULT_CURRENCIES = [
@@ -630,6 +726,7 @@ def migrate(conn):
             if conn.in_transaction:
                 conn.execute("ROLLBACK")
             raise
+    ensure_fare_search(conn)
     seed(conn)
     return current_version(conn)
 
