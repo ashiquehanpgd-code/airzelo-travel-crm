@@ -768,7 +768,7 @@ def scan(conn, ctx, data):
     path = folder / (sid + ext)
     path.write_bytes(content)
     (folder / (sid + ".name")).write_text(name, encoding="utf-8")
-    preview = folder / (sid + ".png")
+    preview = folder / (sid + ".preview.png")   # never the uploaded file itself (a PNG upload has the same stem)
     started = time.time()
     out = read_file(path, preview)
     text = "\n\n".join(p["text"] for p in out["pages"])
@@ -805,7 +805,7 @@ def scan_file(ctx, sid):
 def preview_path(ctx, sid):
     if not re.fullmatch(r"[0-9a-f]{24}", sid or ""):
         raise NotFound("Scan not found")
-    p = scan_dir(ctx) / (sid + ".png")
+    p = scan_dir(ctx) / (sid + ".preview.png")
     if not p.exists():
         raise NotFound("No preview")
     return p

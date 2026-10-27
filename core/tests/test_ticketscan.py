@@ -147,6 +147,17 @@ class ScanAndAttach(Base):
         with self.assertRaises(Exception):
             ts.preview_path(self.ctx, "../../etc/passwd")
 
+    @unittest.skipUnless(OCR, "no text recognition on this system (macOS and Windows only)")
+    def test_image_upload_is_attached_unchanged(self):
+        # the page preview is a separate file; the uploaded screenshot is attached exactly as sent
+        original = (HERE / "fixture_ticket.png").read_bytes()
+        r = self.upload("fixture_ticket.png")
+        self.assertTrue(r["preview"])
+        self.assertNotEqual(ts.preview_path(self.ctx, r["scan_id"]).read_bytes(), original)
+        did = ts.attach_scan(self.conn, self.ctx, self.booking(pnr="K7Q2LM"), r["scan_id"])
+        doc = self.conn.execute("SELECT * FROM documents WHERE id = ?", (did,)).fetchone()
+        self.assertEqual((self.ctx.upload_dir / doc["stored_name"]).read_bytes(), original)
+
     def test_discard(self):
         r = self.upload("fixture_ticket.png" if OCR else "fixture_ticket.pdf")
         self.assertEqual(r["method"], "ocr" if OCR else "pdf-text")
